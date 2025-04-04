@@ -9,14 +9,13 @@ import logging
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 
-# Config (move to env vars or config file later)
 DB_PATH = os.environ.get("AILINE_DB_PATH", "ailine_tree.db")
 CONFIG_PATH = os.environ.get("AILINE_CONFIG_PATH", "ailine_config.txt")
 REPO_DIR = os.environ.get("AILINE_REPO_DIR", "repo")
 MLFLOW_TRACKING_URI = os.environ.get("AILINE_MLFLOW_URI", os.path.abspath("mlruns"))
 LOG_PATH = os.environ.get("AILINE_LOG_PATH", "ailine.log")
+DEFAULT_STORAGE_DIR = os.environ.get("AILINE_STORAGE_DIR", os.path.abspath("snapshots"))
 
-# Setup logging
 logging.basicConfig(filename=LOG_PATH, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 app = Flask(__name__)
 REPO_URL = None
@@ -34,14 +33,15 @@ def init_db():
         dvc_version TEXT,
         snapshot_path TEXT,
         timestamp TEXT,
-        git_url TEXT
+        git_url TEXT,
+        show_hidden INTEGER DEFAULT 0
     )''')
     conn.commit()
     conn.close()
     logging.info("Database initialized")
 
-def create_snapshot(snapshot_id):
-    snapshot_dir = os.path.abspath(os.path.join(REPO_DIR, "snapshots"))
+def create_snapshot(snapshot_id, storage_dir):
+    snapshot_dir = os.path.abspath(storage_dir)
     snapshot_base = os.path.join(snapshot_dir, snapshot_id)
     snapshot_path = f"{snapshot_base}.zip"
     os.makedirs(snapshot_dir, exist_ok=True)
@@ -61,6 +61,16 @@ def load_config():
             REPO_URL = f.read().strip()
         logging.info(f"Loaded REPO_URL: {REPO_URL}")
     return REPO_URL
+
+def normalize_git_url(repo_url, commit_hash):
+    """Convert SSH Git URL to HTTP GitHub URL with commit hash."""
+    if repo_url.startswith("git@"):
+        parts = repo_url.replace("git@", "").replace(".git", "").split(":")
+        if len(parts) == 2:
+            return f"https://{parts[0]}/{parts[1]}/commit/{commit_hash}"
+    elif repo_url.startswith("https://"):
+        return f"{repo_url.replace('.git', '')}/commit/{commit_hash}"
+    return repo_url  # Fallback
 
 @click.group()
 def cli():
@@ -86,7 +96,9 @@ def init(repo_url):
 @cli.command()
 @click.option("--script", default="train.py", help="Script to run")
 @click.option("--dataset", default="data.csv", help="Dataset file")
-def run(script, dataset):
+@click.option("--show-hidden", is_flag=True, default=False, help="Show hidden files and directories in web GUI")
+@click.option("--storage", default=DEFAULT_STORAGE_DIR, help="Directory to store snapshots")
+def run(script, dataset, show_hidden, storage):
     if not REPO_URL:
         raise click.UsageError("AIline not initialized. Run 'ailine init <repo_url>' first.")
     if not os.path.exists(REPO_DIR):
@@ -98,11 +110,12 @@ def run(script, dataset):
 
     repo = git.Repo(REPO_DIR)
     latest_commit = repo.head.commit.hexsha[:7]
-    git_url = f"{REPO_URL.replace('.git', '')}/commit/{repo.head.commit.hexsha}"
+    full_commit_hash = repo.head.commit.hexsha
+    git_url = normalize_git_url(REPO_URL, full_commit_hash)
 
     if repo.is_dirty():
         snapshot_id = f"snap_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        snapshot_path = create_snapshot(snapshot_id)
+        snapshot_path = create_snapshot(snapshot_id, storage)
         commit_id = snapshot_id
         commit_type = "snapshot"
         parent = latest_commit
@@ -129,9 +142,9 @@ def run(script, dataset):
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('''INSERT OR REPLACE INTO tree (id, type, parent, mlflow_run, dvc_version, snapshot_path, timestamp, git_url)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-              (commit_id, commit_type, parent, run_id, dvc_version, snapshot_path, datetime.now().isoformat(), git_url if commit_type == "git" else None))
+    c.execute('''INSERT OR REPLACE INTO tree (id, type, parent, mlflow_run, dvc_version, snapshot_path, timestamp, git_url, show_hidden)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+              (commit_id, commit_type, parent, run_id, dvc_version, snapshot_path, datetime.now().isoformat(), git_url if commit_type == "git" else None, 1 if show_hidden else 0))
     conn.commit()
     conn.close()
     logging.info(f"Experiment logged: {run_id} tied to {commit_id}")
@@ -140,7 +153,7 @@ def run(script, dataset):
 @cli.command()
 def cleanup():
     global REPO_URL
-    items_to_remove = [MLFLOW_TRACKING_URI, REPO_DIR, DB_PATH, CONFIG_PATH]
+    items_to_remove = [MLFLOW_TRACKING_URI, REPO_DIR, DB_PATH, CONFIG_PATH, DEFAULT_STORAGE_DIR]
     for item in os.listdir("."):
         if item.startswith("temp_") and os.path.isdir(item):
             items_to_remove.append(item)
@@ -190,13 +203,14 @@ def commit_view(commit_id):
     load_config()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT git_url FROM tree WHERE id = ?", (commit_id,))
+    c.execute("SELECT git_url, show_hidden FROM tree WHERE id = ?", (commit_id,))
     result = c.fetchone()
     conn.close()
     if not result or not result[0]:
         logging.warning(f"Commit {commit_id} not found")
         return "Commit not found", 404
 
+    git_url, show_hidden = result
     repo = git.Repo(REPO_DIR)
     original_branch = repo.active_branch.name
     repo.git.checkout(commit_id)
@@ -204,8 +218,12 @@ def commit_view(commit_id):
     files = []
     original_dir = os.getcwd()
     os.chdir(REPO_DIR)
-    for root, _, filenames in os.walk("."):
+    for root, dirs, filenames in os.walk("."):
+        if not show_hidden and any(part.startswith('.') for part in root.split(os.sep)):
+            continue
         for filename in filenames:
+            if not show_hidden and filename.startswith('.'):
+                continue
             file_path = os.path.join(root, filename)
             rel_path = os.path.relpath(file_path, ".")
             with open(file_path, "r", errors="ignore") as f:
@@ -215,21 +233,21 @@ def commit_view(commit_id):
     repo.git.checkout(original_branch)
     os.chdir(original_dir)
     logging.info(f"Viewed commit {commit_id}")
-    return render_template("commit.html", commit_id=commit_id, files=files, git_url=result[0])
+    return render_template("commit.html", commit_id=commit_id, files=files, git_url=git_url)
 
 @app.route("/snapshot/<snapshot_id>")
 def snapshot_view(snapshot_id):
     load_config()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT snapshot_path, parent FROM tree WHERE id = ?", (snapshot_id,))
+    c.execute("SELECT snapshot_path, parent, show_hidden FROM tree WHERE id = ?", (snapshot_id,))
     result = c.fetchone()
     conn.close()
     if not result:
         logging.warning(f"Snapshot {snapshot_id} not found")
         return "Snapshot not found", 404
     
-    snapshot_path, parent = result
+    snapshot_path, parent, show_hidden = result
     if not os.path.exists(snapshot_path):
         logging.error(f"Snapshot file not found at {snapshot_path}")
         return f"Snapshot file not found at {snapshot_path}", 500
@@ -242,8 +260,12 @@ def snapshot_view(snapshot_id):
         return f"Failed to unpack snapshot: {str(e)}", 500
     
     files = []
-    for root, _, filenames in os.walk(temp_dir):
+    for root, dirs, filenames in os.walk(temp_dir):
+        if not show_hidden and any(part.startswith('.') for part in root.split(os.sep)):
+            continue
         for filename in filenames:
+            if not show_hidden and filename.startswith('.'):
+                continue
             file_path = os.path.join(root, filename)
             rel_path = os.path.relpath(file_path, temp_dir)
             try:
@@ -254,7 +276,7 @@ def snapshot_view(snapshot_id):
                 files.append({"path": rel_path, "content": f"Error reading file: {str(e)}"})
     
     shutil.rmtree(temp_dir, ignore_errors=True)
-    parent_url = f"{REPO_URL.replace('.git', '')}/commit/{parent}" if parent and REPO_URL else None
+    parent_url = normalize_git_url(REPO_URL, parent) if parent and REPO_URL else None
     logging.info(f"Viewed snapshot {snapshot_id}")
     return render_template("snapshot.html", snapshot_id=snapshot_id, files=files, parent_url=parent_url)
 
