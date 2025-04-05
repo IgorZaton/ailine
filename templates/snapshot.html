@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Snapshot {{ snapshot_id }}{% endblock %}
+{% block content %}
+    <h1 class="mt-4">Snapshot {{ snapshot_id }}</h1>
+    {% if parent_url %}
+        <p><a href="{{ parent_url }}" class="btn btn-primary" target="_blank">View Parent on Git Platform</a></p>
+    {% endif %}
+    <h2>Files</h2>
+    <div class="accordion" id="snapshotFiles">
+    {% for file in files %}
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="heading{{ loop.index }}">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
+                    {{ file.path }}
+                </button>
+            </h2>
+            <div id="collapse{{ loop.index }}" class="accordion-collapse collapse" data-bs-parent="#snapshotFiles">
+                <div class="accordion-body">
+                    <pre>{{ file.content }}</pre>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+    </div>
+{% endblock %}

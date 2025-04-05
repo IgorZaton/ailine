@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Commits{% endblock %}
+{% block content %}
+    <h1 class="mt-4">Commits</h1>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Type</th>
+                <th>Run ID</th>
+                <th>Dataset</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for entry in tree %}
+            <tr>
+                <td>
+                    {% if entry.type == "git" %}
+                        <a href="/commit/{{ entry.id }}">{{ entry.id }}</a>
+                    {% elif entry.type == "snapshot" %}
+                        <a href="/snapshot/{{ entry.id }}">{{ entry.id }}</a>
+                    {% endif %}
+                </td>
+                <td>{{ entry.type }}</td>
+                <td>{{ entry.mlflow_run }}</td>
+                <td>{{ entry.dvc_version }}</td>
+                <td>{{ entry.timestamp }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Experiments{% endblock %}
+{% block content %}
+    <h1 class="mt-4">Experiments</h1>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Run ID</th>
+                <th>Accuracy</th>
+                <th>Commit/Snapshot</th>
+                <th>Dataset</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for run in runs %}
+            <tr>
+                <td>{{ run.run_id }}</td>
+                <td>{{ run.accuracy }}</td>
+                <td>
+                    {% if run.commit %}
+                        <a href="/commit/{{ run.commit }}">{{ run.commit }}</a>
+                    {% elif run.snapshot %}
+                        <a href="/snapshot/{{ run.snapshot }}">{{ run.snapshot }}</a>
+                    {% endif %}
+                </td>
+                <td>{{ run.dataset }}</td>
+                <td>{{ run.timestamp }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}
