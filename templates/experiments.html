@@ -1,33 +1,50 @@
 {% extends "base.html" %}
 {% block title %}Experiments{% endblock %}
 {% block content %}
-    <h1 class="mt-4">Experiments</h1>
-    <table class="table table-striped">
-        <thead>
-            <tr>
-                <th>Run ID</th>
-                <th>Accuracy</th>
-                <th>Commit/Snapshot</th>
-                <th>Dataset</th>
-                <th>Timestamp</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for run in runs %}
-            <tr>
-                <td>{{ run.run_id }}</td>
-                <td>{{ run.accuracy }}</td>
-                <td>
-                    {% if run.commit %}
-                        <a href="/commit/{{ run.commit }}">{{ run.commit }}</a>
-                    {% elif run.snapshot %}
-                        <a href="/snapshot/{{ run.snapshot }}">{{ run.snapshot }}</a>
-                    {% endif %}
-                </td>
-                <td>{{ run.dataset }}</td>
-                <td>{{ run.timestamp }}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+<div class="container mt-4">
+    <h1>Experiments</h1>
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Run ID</th>
+                    <th>Accuracy</th>
+                    <th>Commit</th>
+                    <th>Snapshot</th>
+                    <th>Dataset</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in runs %}
+                <tr>
+                    <td><a href="{{ run.mlflow_url }}" target="_blank">{{ run.run_id }}</a></td>
+                    <td>{{ run.accuracy }}</td>
+                    <td>
+                        {% if run.commit %}
+                        <a href="{{ url_for('commit_view', commit_id=run.commit) }}">{{ run.commit }}</a>
+                        {% else %}
+                        N/A
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if run.snapshot %}
+                        <a href="{{ url_for('snapshot_view', snapshot_id=run.snapshot) }}">{{ run.snapshot }}</a>
+                        {% else %}
+                        N/A
+                        {% endif %}
+                    </td>
+                    <td>{{ run.dataset }}</td>
+                    <td>{{ run.timestamp }}</td>
+                </tr>
+                {% endfor %}
+                {% if not runs %}
+                <tr>
+                    <td colspan="6">No experiments found</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
 {% endblock %}

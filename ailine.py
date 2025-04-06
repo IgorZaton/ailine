@@ -8,17 +8,43 @@ import click
 import logging
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
+import atexit
 
 DB_PATH = os.environ.get("AILINE_DB_PATH", "ailine_tree.db")
 CONFIG_PATH = os.environ.get("AILINE_CONFIG_PATH", "ailine_config.txt")
 REPO_DIR = os.environ.get("AILINE_REPO_DIR", "repo")
-MLFLOW_TRACKING_URI = os.environ.get("AILINE_MLFLOW_URI", os.path.abspath("mlruns"))
+MLFLOW_TRACKING_URI = os.environ.get("AILINE_MLFLOW_URI", "http://localhost:5001")  # Default to MLflow UI port
+MLFLOW_STORAGE_DIR = os.environ.get("AILINE_MLFLOW_STORAGE", os.path.abspath("mlruns"))  # Separate storage path
 LOG_PATH = os.environ.get("AILINE_LOG_PATH", "ailine.log")
 DEFAULT_STORAGE_DIR = os.environ.get("AILINE_STORAGE_DIR", os.path.abspath("snapshots"))
 
 logging.basicConfig(filename=LOG_PATH, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 app = Flask(__name__)
 REPO_URL = None
+MLFLOW_PROCESS = None  # Global to track MLflow UI process
+
+def start_mlflow_ui():
+    global MLFLOW_PROCESS
+    if MLFLOW_PROCESS is None:
+        # Start MLflow UI as a subprocess
+        cmd = [
+            "mlflow", "ui",
+            "--backend-store-uri", MLFLOW_STORAGE_DIR,
+            "--host", "0.0.0.0",
+            "--port", "5001"
+        ]
+        MLFLOW_PROCESS = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        logging.info(f"Started MLflow UI on port 5001 with PID {MLFLOW_PROCESS.pid}")
+        # Register cleanup function
+        atexit.register(cleanup_mlflow_ui)
+
+def cleanup_mlflow_ui():
+    global MLFLOW_PROCESS
+    if MLFLOW_PROCESS is not None:
+        MLFLOW_PROCESS.terminate()
+        MLFLOW_PROCESS.wait()
+        logging.info(f"Terminated MLflow UI with PID {MLFLOW_PROCESS.pid}")
+        MLFLOW_PROCESS = None
 
 def init_db():
     if os.path.exists(DB_PATH):
@@ -33,8 +59,7 @@ def init_db():
         dvc_version TEXT,
         snapshot_path TEXT,
         timestamp TEXT,
-        git_url TEXT,
-        show_hidden INTEGER DEFAULT 0
+        git_url TEXT
     )''')
     conn.commit()
     conn.close()
@@ -96,9 +121,8 @@ def init(repo_url):
 @cli.command()
 @click.option("--script", default="train.py", help="Script to run")
 @click.option("--dataset", default="data.csv", help="Dataset file")
-@click.option("--show-hidden", is_flag=True, default=False, help="Show hidden files and directories in web GUI")
 @click.option("--storage", default=DEFAULT_STORAGE_DIR, help="Directory to store snapshots")
-def run(script, dataset, show_hidden, storage):
+def run(script, dataset, storage):
     if not REPO_URL:
         raise click.UsageError("AIline not initialized. Run 'ailine init <repo_url>' first.")
     if not os.path.exists(REPO_DIR):
@@ -142,9 +166,9 @@ def run(script, dataset, show_hidden, storage):
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('''INSERT OR REPLACE INTO tree (id, type, parent, mlflow_run, dvc_version, snapshot_path, timestamp, git_url, show_hidden)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-              (commit_id, commit_type, parent, run_id, dvc_version, snapshot_path, datetime.now().isoformat(), git_url if commit_type == "git" else None, 1 if show_hidden else 0))
+    c.execute('''INSERT OR REPLACE INTO tree (id, type, parent, mlflow_run, dvc_version, snapshot_path, timestamp, git_url)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+              (commit_id, commit_type, parent, run_id, dvc_version, snapshot_path, datetime.now().isoformat(), git_url if commit_type == "git" else None))
     conn.commit()
     conn.close()
     logging.info(f"Experiment logged: {run_id} tied to {commit_id}")
@@ -153,7 +177,7 @@ def run(script, dataset, show_hidden, storage):
 @cli.command()
 def cleanup():
     global REPO_URL
-    items_to_remove = [MLFLOW_TRACKING_URI, REPO_DIR, DB_PATH, CONFIG_PATH, DEFAULT_STORAGE_DIR]
+    items_to_remove = [MLFLOW_STORAGE_DIR, REPO_DIR, DB_PATH, CONFIG_PATH, DEFAULT_STORAGE_DIR]  # Updated to MLFLOW_STORAGE_DIR
     for item in os.listdir("."):
         if item.startswith("temp_") and os.path.isdir(item):
             items_to_remove.append(item)
@@ -190,27 +214,35 @@ def commits():
 def experiments():
     load_config()
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    runs = mlflow.search_runs()
-    runs_data = [{"run_id": r["run_id"], "accuracy": r.get("metrics.accuracy", "N/A"), 
-                  "commit": r.get("tags.commit"), "snapshot": r.get("tags.snapshot"), 
-                  "dataset": r["tags.dataset"], "timestamp": r.get("info.start_time", "N/A")} 
-                 for r in runs.to_dict(orient="records")]
-    logging.info(f"Experiments page accessed, found {len(runs_data)} runs")
-    return render_template("experiments.html", runs=runs_data, repo_url=REPO_URL)
+    try:
+        runs = mlflow.search_runs()
+        runs_data = [{"run_id": r["run_id"], 
+                      "mlflow_url": f"{MLFLOW_TRACKING_URI}/#/experiments/{r['experiment_id']}/runs/{r['run_id']}",  # Fixed key
+                      "accuracy": r.get("metrics.accuracy", "N/A"), 
+                      "commit": r.get("tags.commit"), 
+                      "snapshot": r.get("tags.snapshot"), 
+                      "dataset": r["tags.dataset"], 
+                      "timestamp": r.get("info.start_time", "N/A")} 
+                     for r in runs.to_dict(orient="records")]
+        logging.info(f"Experiments page accessed, found {len(runs_data)} runs")
+        return render_template("experiments.html", runs=runs_data, repo_url=REPO_URL)
+    except Exception as e:
+        logging.error(f"Error in experiments route: {str(e)}")
+        return f"Internal Server Error: {str(e)}", 500
 
 @app.route("/commit/<commit_id>")
 def commit_view(commit_id):
     load_config()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT git_url, show_hidden FROM tree WHERE id = ?", (commit_id,))
+    c.execute("SELECT git_url FROM tree WHERE id = ?", (commit_id,))
     result = c.fetchone()
     conn.close()
     if not result or not result[0]:
         logging.warning(f"Commit {commit_id} not found")
         return "Commit not found", 404
 
-    git_url, show_hidden = result
+    git_url = result[0]
     repo = git.Repo(REPO_DIR)
     original_branch = repo.active_branch.name
     repo.git.checkout(commit_id)
@@ -219,10 +251,10 @@ def commit_view(commit_id):
     original_dir = os.getcwd()
     os.chdir(REPO_DIR)
     for root, dirs, filenames in os.walk("."):
-        if not show_hidden and any(part.startswith('.') for part in root.split(os.sep)):
+        if any(part.startswith('.') for part in root.split(os.sep)):
             continue
         for filename in filenames:
-            if not show_hidden and filename.startswith('.'):
+            if filename.startswith('.'):
                 continue
             file_path = os.path.join(root, filename)
             rel_path = os.path.relpath(file_path, ".")
@@ -240,14 +272,14 @@ def snapshot_view(snapshot_id):
     load_config()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT snapshot_path, parent, show_hidden FROM tree WHERE id = ?", (snapshot_id,))
+    c.execute("SELECT snapshot_path, parent FROM tree WHERE id = ?", (snapshot_id,))
     result = c.fetchone()
     conn.close()
     if not result:
         logging.warning(f"Snapshot {snapshot_id} not found")
         return "Snapshot not found", 404
     
-    snapshot_path, parent, show_hidden = result
+    snapshot_path, parent = result
     if not os.path.exists(snapshot_path):
         logging.error(f"Snapshot file not found at {snapshot_path}")
         return f"Snapshot file not found at {snapshot_path}", 500
@@ -261,10 +293,10 @@ def snapshot_view(snapshot_id):
     
     files = []
     for root, dirs, filenames in os.walk(temp_dir):
-        if not show_hidden and any(part.startswith('.') for part in root.split(os.sep)):
+        if any(part.startswith('.') for part in root.split(os.sep)):
             continue
         for filename in filenames:
-            if not show_hidden and filename.startswith('.'):
+            if filename.startswith('.'):
                 continue
             file_path = os.path.join(root, filename)
             rel_path = os.path.relpath(file_path, temp_dir)
@@ -281,4 +313,8 @@ def snapshot_view(snapshot_id):
     return render_template("snapshot.html", snapshot_id=snapshot_id, files=files, parent_url=parent_url)
 
 if __name__ == "__main__":
+    # Start MLflow UI before running Flask
+    start_mlflow_ui()
     cli()
+    # Flask runs in the foreground, MLflow UI in the background
+    app.run(host="0.0.0.0", port=5000)
