@@ -7,4 +7,7 @@ echo "hidden" > .hidden.txt
 mkdir .hidden_dir && echo "secret" > .hidden_dir/secret.txt
 git add . && git commit -m "Initial" && git push origin main
 echo "print('dirty')" >> train.py  # For snapshot
+git add -u
+git commit -m "update train"
+git push
 cd ..
