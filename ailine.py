@@ -9,34 +9,38 @@ import logging
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 import atexit
+import time
 
 DB_PATH = os.environ.get("AILINE_DB_PATH", "ailine_tree.db")
 CONFIG_PATH = os.environ.get("AILINE_CONFIG_PATH", "ailine_config.txt")
 REPO_DIR = os.environ.get("AILINE_REPO_DIR", "repo")
-MLFLOW_TRACKING_URI = os.environ.get("AILINE_MLFLOW_URI", "http://localhost:5001")  # Default to MLflow UI port
-MLFLOW_STORAGE_DIR = os.environ.get("AILINE_MLFLOW_STORAGE", os.path.abspath("mlruns"))  # Separate storage path
+MLFLOW_TRACKING_URI = os.environ.get("AILINE_MLFLOW_URI", "http://localhost:5001")
+MLFLOW_STORAGE_DIR = os.environ.get("AILINE_MLFLOW_STORAGE", os.path.abspath("mlruns"))
 LOG_PATH = os.environ.get("AILINE_LOG_PATH", "ailine.log")
 DEFAULT_STORAGE_DIR = os.environ.get("AILINE_STORAGE_DIR", os.path.abspath("snapshots"))
 
 logging.basicConfig(filename=LOG_PATH, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 app = Flask(__name__)
 REPO_URL = None
-MLFLOW_PROCESS = None  # Global to track MLflow UI process
+MLFLOW_PROCESS = None
 
 def start_mlflow_ui():
     global MLFLOW_PROCESS
     if MLFLOW_PROCESS is None:
-        # Start MLflow UI as a subprocess
         cmd = [
             "mlflow", "ui",
             "--backend-store-uri", MLFLOW_STORAGE_DIR,
             "--host", "0.0.0.0",
             "--port", "5001"
         ]
-        MLFLOW_PROCESS = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        logging.info(f"Started MLflow UI on port 5001 with PID {MLFLOW_PROCESS.pid}")
-        # Register cleanup function
-        atexit.register(cleanup_mlflow_ui)
+        try:
+            MLFLOW_PROCESS = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            logging.info(f"Started MLflow UI on port 5001 with PID {MLFLOW_PROCESS.pid}")
+            time.sleep(2)
+            atexit.register(cleanup_mlflow_ui)
+        except Exception as e:
+            logging.error(f"Failed to start MLflow UI: {str(e)}")
+            raise
 
 def cleanup_mlflow_ui():
     global MLFLOW_PROCESS
@@ -133,7 +137,7 @@ def run(script, dataset, storage):
         raise click.UsageError(f"Dataset {dataset} not found in {REPO_DIR}")
 
     repo = git.Repo(REPO_DIR)
-    latest_commit = repo.head.commit.hexsha[:7]
+    latest_commit = repo.head.commit.hexsha
     full_commit_hash = repo.head.commit.hexsha
     git_url = normalize_git_url(REPO_URL, full_commit_hash)
 
@@ -142,7 +146,7 @@ def run(script, dataset, storage):
         snapshot_path = create_snapshot(snapshot_id, storage)
         commit_id = snapshot_id
         commit_type = "snapshot"
-        parent = latest_commit
+        parent = latest_commit[:7]
     else:
         commit_id = latest_commit
         commit_type = "git"
@@ -177,7 +181,7 @@ def run(script, dataset, storage):
 @cli.command()
 def cleanup():
     global REPO_URL
-    items_to_remove = [MLFLOW_STORAGE_DIR, REPO_DIR, DB_PATH, CONFIG_PATH, DEFAULT_STORAGE_DIR]  # Updated to MLFLOW_STORAGE_DIR
+    items_to_remove = [MLFLOW_STORAGE_DIR, REPO_DIR, DB_PATH, CONFIG_PATH, DEFAULT_STORAGE_DIR]
     for item in os.listdir("."):
         if item.startswith("temp_") and os.path.isdir(item):
             items_to_remove.append(item)
@@ -217,11 +221,11 @@ def experiments():
     try:
         runs = mlflow.search_runs()
         runs_data = [{"run_id": r["run_id"], 
-                      "mlflow_url": f"{MLFLOW_TRACKING_URI}/#/experiments/{r['experiment_id']}/runs/{r['run_id']}",  # Fixed key
+                      "mlflow_url": f"{MLFLOW_TRACKING_URI}/#/experiments/{r['experiment_id']}/runs/{r['run_id']}", 
                       "accuracy": r.get("metrics.accuracy", "N/A"), 
                       "commit": r.get("tags.commit"), 
                       "snapshot": r.get("tags.snapshot"), 
-                      "dataset": r["tags.dataset"], 
+                      "dataset": r.get("tags.dataset", "N/A"), 
                       "timestamp": r.get("info.start_time", "N/A")} 
                      for r in runs.to_dict(orient="records")]
         logging.info(f"Experiments page accessed, found {len(runs_data)} runs")
@@ -239,33 +243,74 @@ def commit_view(commit_id):
     result = c.fetchone()
     conn.close()
     if not result or not result[0]:
-        logging.warning(f"Commit {commit_id} not found")
+        logging.warning(f"Commit {commit_id} not found in database")
         return "Commit not found", 404
 
     git_url = result[0]
-    repo = git.Repo(REPO_DIR)
-    original_branch = repo.active_branch.name
-    repo.git.checkout(commit_id)
-    
-    files = []
-    original_dir = os.getcwd()
-    os.chdir(REPO_DIR)
-    for root, dirs, filenames in os.walk("."):
-        if any(part.startswith('.') for part in root.split(os.sep)):
-            continue
-        for filename in filenames:
-            if filename.startswith('.'):
+    try:
+        repo = git.Repo(REPO_DIR)
+        # Find the full commit hash
+        full_commit_id = None
+        for commit in repo.iter_commits():
+            if commit.hexsha == commit_id or commit.hexsha.startswith(commit_id):
+                full_commit_id = commit.hexsha
+                break
+        if not full_commit_id:
+            logging.error(f"Commit {commit_id} not found in Git repository")
+            return f"Commit {commit_id} not found in repository", 404
+
+        # Log commit contents
+        commit_files = repo.git.ls_tree("-r", full_commit_id, "--name-only").splitlines()
+        logging.info(f"Files in commit {full_commit_id}: {commit_files}")
+
+        original_branch = repo.active_branch.name
+        logging.info(f"Checking out commit {full_commit_id} from branch {original_branch}")
+        # Clean working directory to avoid interference
+        repo.git.clean("-fd")
+        repo.git.reset("--hard")
+        repo.git.checkout(full_commit_id)
+        
+        files = []
+        original_dir = os.getcwd()
+        os.chdir(REPO_DIR)
+        logging.info(f"Current directory: {os.getcwd()}")
+        logging.info(f"Directory contents after checkout: {os.listdir('.')}")
+        for root, dirs, filenames in os.walk("."):
+            # Skip hidden directories (e.g., .git, .hidden_dir)
+            if any(part.startswith('.') for part in root.split(os.sep)[1:]):
+                logging.info(f"Skipping hidden directory: {root}")
                 continue
-            file_path = os.path.join(root, filename)
-            rel_path = os.path.relpath(file_path, ".")
-            with open(file_path, "r", errors="ignore") as f:
-                content = f.read()
-            files.append({"path": rel_path, "content": content})
-    
-    repo.git.checkout(original_branch)
-    os.chdir(original_dir)
-    logging.info(f"Viewed commit {commit_id}")
-    return render_template("commit.html", commit_id=commit_id, files=files, git_url=git_url)
+            logging.info(f"Walking directory: {root}, found files: {filenames}")
+            for filename in filenames:
+                # Skip hidden files (e.g., .hidden.txt)
+                if filename.startswith('.'):
+                    logging.info(f"Skipping hidden file: {filename}")
+                    continue
+                file_path = os.path.join(root, filename)
+                rel_path = os.path.relpath(file_path, ".")
+                logging.info(f"Processing file: {rel_path}")
+                try:
+                    with open(file_path, "r", errors="ignore") as f:
+                        content = f.read()
+                    files.append({"path": rel_path, "content": content})
+                    logging.info(f"Added file: {rel_path}")
+                except Exception as e:
+                    logging.error(f"Error reading file {rel_path}: {str(e)}")
+                    files.append({"path": rel_path, "content": f"Error reading file: {str(e)}"})
+
+        logging.info(f"Found {len(files)} files for commit {full_commit_id}")
+        if not files:
+            logging.warning(f"No files found for commit {full_commit_id}. Directory contents: {os.listdir('.')}")
+            files.append({"path": "N/A", "content": "No files found in this commit."})
+
+        repo.git.checkout(original_branch)
+        repo.git.reset("--hard")
+        os.chdir(original_dir)
+        logging.info(f"Restored to branch {original_branch}, current dir: {os.getcwd()}")
+        return render_template("commit.html", commit_id=commit_id, files=files, git_url=git_url)
+    except Exception as e:
+        logging.error(f"Error in commit_view for {commit_id}: {str(e)}")
+        return f"Error processing commit {commit_id}: {str(e)}", 500
 
 @app.route("/snapshot/<snapshot_id>")
 def snapshot_view(snapshot_id):
@@ -313,8 +358,6 @@ def snapshot_view(snapshot_id):
     return render_template("snapshot.html", snapshot_id=snapshot_id, files=files, parent_url=parent_url)
 
 if __name__ == "__main__":
-    # Start MLflow UI before running Flask
     start_mlflow_ui()
     cli()
-    # Flask runs in the foreground, MLflow UI in the background
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
