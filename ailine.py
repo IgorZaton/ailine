@@ -1,7 +1,9 @@
+from enum import Enum
 import os
 import sqlite3
 import subprocess
 import shutil
+from uuid import uuid4
 import git
 import mlflow
 import click
@@ -10,6 +12,10 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 import atexit
 import time
+
+import yaml
+
+from utils import print_formatted_data, print_table
 
 DB_PATH = os.environ.get("AILINE_DB_PATH", "ailine_tree.db")
 CONFIG_PATH = os.environ.get("AILINE_CONFIG_PATH", "ailine_config.txt")
@@ -23,6 +29,10 @@ logging.basicConfig(filename=LOG_PATH, level=logging.INFO, format="%(asctime)s -
 app = Flask(__name__)
 REPO_URL = None
 MLFLOW_PROCESS = None
+
+class CommitType(str, Enum):
+    GIT = "git"
+    SNAPSHOT = "snapshot"
 
 def start_mlflow_ui():
     global MLFLOW_PROCESS
@@ -69,19 +79,29 @@ def init_db():
     conn.close()
     logging.info("Database initialized")
 
-def create_snapshot(snapshot_id, storage_dir):
+def create_snapshot(snapshot_hash: str, parent_commit_hash: str, storage_dir):
     snapshot_dir = os.path.abspath(storage_dir)
-    snapshot_base = os.path.join(snapshot_dir, snapshot_id)
+    snapshot_base = os.path.join(snapshot_dir, snapshot_hash)
     snapshot_path = f"{snapshot_base}.zip"
     os.makedirs(snapshot_dir, exist_ok=True)
     original_dir = os.getcwd()
     os.chdir(REPO_DIR)
+    create_snapshot_metafile(snapshot_hash, parent_commit_hash)
     shutil.make_archive(snapshot_base, "zip", ".")
     os.chdir(original_dir)
     if not os.path.exists(snapshot_path):
         raise FileNotFoundError(f"Snapshot not created at {snapshot_path}")
     logging.info(f"Snapshot created: {snapshot_path}")
     return snapshot_path
+
+def create_snapshot_metafile(snapshot_hash: str, parent_commit_hash: str):
+    data = {
+        'parent_commit_hash': parent_commit_hash,
+        'hash': snapshot_hash,
+    }
+    
+    with open(".meta.yaml", "w") as meta_file:
+        yaml.dump(data, meta_file, default_flow_style=False)
 
 def load_config():
     global REPO_URL
@@ -122,6 +142,22 @@ def init(repo_url):
     logging.info(f"Initialized AIline with {repo_url} in {REPO_DIR}")
     print(f"Initialized AIline with {repo_url} in {REPO_DIR}")
 
+@cli.command
+@click.option("--verbose", is_flag=True, help="Show all data about each experiment in a terminal")
+def status(verbose):
+    if not os.path.exists(DB_PATH):
+        return "Database not found. Run 'ailine init' and 'ailine run' first.", 500
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id, type, parent, mlflow_run, dvc_version, snapshot_path, timestamp, git_url FROM tree")
+    tree = [{"id": r[0], "type": r[1], "parent": r[2], "mlflow_run": r[3], "dvc_version": r[4], 
+             "snapshot_path": r[5], "timestamp": r[6], "git_url": r[7]} for r in c.fetchall()]
+    conn.close()
+    if verbose:
+        print_formatted_data(tree)
+    else:
+        print_table(tree)
+
 @cli.command()
 @click.option("--script", default="train.py", help="Script to run")
 @click.option("--dataset", default="data.csv", help="Dataset file")
@@ -142,14 +178,14 @@ def run(script, dataset, storage):
     git_url = normalize_git_url(REPO_URL, full_commit_hash)
 
     if repo.is_dirty():
-        snapshot_id = f"snap_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        snapshot_path = create_snapshot(snapshot_id, storage)
-        commit_id = snapshot_id
-        commit_type = "snapshot"
+        snapshot_hash = str(uuid4())
+        snapshot_path = create_snapshot(snapshot_hash, parent_commit_hash=latest_commit, storage_dir=storage)
+        commit_id = snapshot_hash
+        commit_type = CommitType.SNAPSHOT
         parent = latest_commit[:7]
     else:
         commit_id = latest_commit
-        commit_type = "git"
+        commit_type = CommitType.GIT
         snapshot_path = None
         parent = None
 
@@ -162,7 +198,7 @@ def run(script, dataset, storage):
         subprocess.run(["python", script], check=True)
         mlflow.log_param("lr", 0.02)
         mlflow.log_metric("accuracy", 0.87)
-        mlflow.set_tag("commit" if commit_type == "git" else "snapshot", commit_id)
+        mlflow.set_tag("commit" if commit_type == CommitType.GIT else CommitType.SNAPSHOT, commit_id)
         mlflow.set_tag("dataset", dvc_version)
         run_id = mlflow.active_run().info.run_id
     
