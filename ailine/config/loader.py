@@ -18,8 +18,7 @@ from ailine.config.defaults import (
     DEFAULT_ENVIRONMENT_CONFIG,
     DEFAULT_RUN_CAPTURE_CONFIG,
     DEFAULT_SNAPSHOT_POLICY,
-    VALID_DVC_MODES,
-    VALID_DVC_SCOPES,
+    REMOVED_DVC_KEYS,
 )
 
 
@@ -51,24 +50,23 @@ def load_snapshot_policy() -> dict:
 def load_dvc_config() -> dict:
     cfg = dict(DEFAULT_DVC_CONFIG)
     dvc_cfg = _read_policy_file().get("dvc", {})
+
+    removed = sorted(set(dvc_cfg) & REMOVED_DVC_KEYS.keys())
+    if removed:
+        details = ", ".join(f"dvc.{k} ({REMOVED_DVC_KEYS[k]})" for k in removed)
+        raise click.ClickException(
+            f"Removed config key(s) found in {constants.POLICY_PATH}: {details}. "
+            "Delete these keys to continue."
+        )
+
     for key in cfg:
         if key in dvc_cfg:
             cfg[key] = dvc_cfg[key]
 
-    if cfg["mode"] not in VALID_DVC_MODES:
+    if not isinstance(cfg["require_hash_fields"], bool):
         raise click.ClickException(
-            f"Invalid dvc.mode '{cfg['mode']}' in {constants.POLICY_PATH}. "
-            f"Allowed: {sorted(VALID_DVC_MODES)}"
-        )
-    if cfg["scope"] not in VALID_DVC_SCOPES:
-        raise click.ClickException(
-            f"Invalid dvc.scope '{cfg['scope']}' in {constants.POLICY_PATH}. "
-            f"Allowed: {sorted(VALID_DVC_SCOPES)}"
-        )
-    if not isinstance(cfg["status_verbose_limit"], int) or cfg["status_verbose_limit"] < 1:
-        raise click.ClickException(
-            f"Invalid dvc.status_verbose_limit '{cfg['status_verbose_limit']}' in "
-            f"{constants.POLICY_PATH}. Must be integer >= 1."
+            f"Invalid dvc.require_hash_fields '{cfg['require_hash_fields']}' in "
+            f"{constants.POLICY_PATH}. Must be true/false."
         )
     if not isinstance(cfg["ignore_paths"], list):
         raise click.ClickException(

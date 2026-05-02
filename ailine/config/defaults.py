@@ -22,25 +22,51 @@ DEFAULT_SNAPSHOT_POLICY = {
 }
 
 DEFAULT_DVC_CONFIG = {
-    "mode": "local_or_remote",
-    "scope": "all_dvc_tracked",
     "remote_name": None,
-    "auto_pull_missing": True,
     "require_hash_fields": True,
-    "status_verbose_limit": 10,
     "ignore_paths": [],
 }
-VALID_DVC_MODES = {"local_or_remote"}
-VALID_DVC_SCOPES = {"all_dvc_tracked"}
+
+# Keys that used to live under `dvc:` but are no longer honored. Loader rejects
+# them loudly so a stale `.ailine.yml` does not silently change behaviour.
+REMOVED_DVC_KEYS = {
+    "mode": "single allowed value, no longer configurable",
+    "scope": "single allowed value, no longer configurable",
+    "auto_pull_missing": "removed with materialize_dvc_linkage; restore feature will reintroduce",
+    "status_verbose_limit": "never read by any code path",
+}
 
 DEFAULT_ENVIRONMENT_CONFIG = {
     "enabled": True,
-    "packages": ["mlflow", "flask", "gitpython", "dvc"],
+    "packages": ["mlflow", "dvc"],
 }
 
 DEFAULT_RUN_CAPTURE_CONFIG = {
     "enabled": True,
 }
+
+# `project:` documents intent and pins schema version for migrations.
+SUPPORTED_PROJECT_VERSIONS = {1}
+DEFAULT_PROJECT_CONFIG = {
+    "version": 1,
+    "mode": "track",  # "track" -> pip-installable workflow, "demo" -> legacy `init/run`
+}
+VALID_PROJECT_MODES = {"track", "demo"}
+
+# `track:` controls how `ailine track --` behaves around the user's argv.
+DEFAULT_TRACK_CONFIG = {
+    "repo_root": "auto",  # "auto" walks parents for .git; or absolute path
+    "mlflow": {
+        "mode": "inherit",   # inherit | wrap | none
+        "set_env": False,    # if true, ailine sets MLFLOW_TRACKING_URI before child
+    },
+    "dvc": {
+        "verify": "off",        # off | warn | strict
+        "verify_commands": [],  # list of argv lists like [["dvc", "status", "--quiet"]]
+    },
+}
+VALID_MLFLOW_MODES = {"inherit", "wrap", "none"}
+VALID_DVC_VERIFY_LEVELS = {"off", "warn", "strict"}
 
 
 class CommitType(str, Enum):

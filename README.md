@@ -14,14 +14,47 @@ poetry install
 pip install -e .
 ```
 
-## Quick start
+## Quick start (your own project)
 
 ```bash
-ailine init <git_repo_url>          # clone the target repo
-ailine run --script train.py        # snapshot + DVC linkage + MLflow run
-ailine status                       # tabular view of recorded runs
-ailine status --verbose             # per-run details, env, DVC items
+pip install ailine                                  # or: poetry add --group dev ailine
+cd /path/to/your/repo
+ailine init-workspace                               # writes a default .ailine.yml
+ailine doctor                                       # green-light all checks
+ailine track -- python train.py --epochs 5          # run + record
+ailine status --verbose                             # see what was captured
 ```
+
+`ailine track --` is the primary, no-magic interface. It snapshots dirty
+state, records DVC linkage + environment fingerprint + the exact argv, runs
+your command in the repo root, and propagates the exit code. Your training
+script keeps full ownership of MLflow runs (`track.mlflow.mode: inherit`).
+See [docs/track-contract.md](docs/track-contract.md) for the schema.
+
+### Demo / tutorial flow
+
+The legacy "clone a sample repo and pretend-train" flow is still available
+behind explicit `*-demo` commands:
+
+```bash
+ailine init-demo <git_repo_url>     # clone into ./repo
+ailine run --script train.py        # demo: wraps in MLflow, records snapshot
+ailine reset-demo                   # remove ./repo, DB, mlruns/
+```
+
+### CLI command summary
+
+| Command | Purpose |
+|---------|---------|
+| `ailine init-workspace [--force]` | Bootstrap the pip-install workflow: write a default `.ailine.yml` and ensure state directories. No clone. |
+| `ailine doctor [--json] [--strict] [--config PATH]` | Validate `.ailine.yml` and the local environment. The single source of truth for "is my setup OK". |
+| `ailine track [--storage DIR] [--config PATH] [--run-name NAME] -- <argv...>` | Run a command under AIline tracking. The argv after `--` is executed verbatim from the repo root. |
+| `ailine status [--verbose]` | List recorded runs as a table or per-record dump. Errors clearly when the DB does not exist yet. |
+| `ailine serve` | Start the MLflow UI subprocess and the Flask app together (ports 5001 and 5000). |
+| `ailine init-demo <repo_url>` | Clone a sample repo into `./repo` and persist the URL in `ailine_config.txt` (tutorial flow). |
+| `ailine run --script <s> [--dataset <d>] [--dvc-add] [--storage DIR]` | Demo wrapper around `track` that hard-codes `./repo` and forces `mlflow.mode=wrap`. |
+| `ailine reset-demo` | Delete demo artifacts (`./repo`, DB, `mlruns/`, default snapshot dir, `temp_*`). |
+| `ailine init` / `ailine cleanup` | Deprecated aliases for `init-demo` / `reset-demo`. |
 
 By default MLflow writes runs to a **local file store** under `./mlruns` (no
 tracking server required). Override with `AILINE_MLFLOW_URI` if you use a remote
@@ -34,7 +67,12 @@ export AILINE_MLFLOW_URI=http://localhost:5001
 ailine serve    # MLflow UI + Flask on :5001 / :5000 in one process
 ```
 
-Then open `http://localhost:5000` for ailine and `http://localhost:5001` for MLflow.
+Then open `http://localhost:5000/` for ailine (the unified **Lineage** dashboard)
+and `http://localhost:5001` for MLflow.
+
+The legacy paths `http://localhost:5000/commits` and
+`http://localhost:5000/experiments` now redirect (302) to `/` for backward
+compatibility.
 
 ## Code browser (commit / snapshot views)
 
@@ -56,9 +94,14 @@ Run links only work if an MLflow UI is reachable at that base URL (for example
 `mlflow ui --backend-store-uri "$(pwd)/mlruns" --host 127.0.0.1 --port 5001`).
 
 Project-level behaviour lives in `.ailine.yml` at the repository root
-(snapshot exclusions, large-file policy, DVC mode, environment fingerprint
-packages, run-capture toggle). See `docs/repro-contract.md` for the
-reproducibility guarantees AIline aims to provide.
+(snapshot exclusions, large-file policy, DVC linkage settings, environment
+fingerprint packages, run-capture toggle, plus the new `project:` and
+`track:` blocks for the `ailine track --` workflow).
+
+- [docs/track-contract.md](docs/track-contract.md) — what `ailine track`
+  guarantees and the full `.ailine.yml` schema.
+- [docs/repro-contract.md](docs/repro-contract.md) — the snapshot
+  reproducibility guarantees AIline aims to provide.
 
 ## Layout
 

@@ -1,37 +1,29 @@
 """``ailine`` Click entrypoint and command orchestration."""
 
-import json
 import logging
 import os
-import shutil
 import subprocess
-from datetime import datetime
+import sys
 
 import click
-import git
 import mlflow
 
+from ailine.cli.doctor import doctor_command
 from ailine.cli.formatting import print_formatted_data, print_table
-from ailine.config import constants
-from ailine.config.defaults import CommitType
-from ailine.config.loader import (
-    load_dvc_config,
-    load_environment_config,
-    load_run_capture_config,
-    load_snapshot_policy,
+from ailine.cli.init import (
+    deprecated_cleanup_command,
+    deprecated_init_command,
+    init_demo_command,
+    init_workspace_command,
+    reset_demo_command,
 )
-from ailine.fingerprint.env import collect_environment_fingerprint
-from ailine.integrations.git_url import normalize_git_url
-from ailine.linkage.dvc import build_dvc_linkage
+from ailine.cli.track import track_command
+from ailine.config import constants
+from ailine.config.validate import ConfigValidationError, validate_config
 from ailine.persistence import repository
 from ailine.persistence.db import init_db
-from ailine.persistence.repository import RunRecord
-from ailine.run.capture import build_run_command_payload
-from ailine.snapshot.archive import create_snapshot
-from ailine.snapshot.manifest import build_manifest
-from ailine.snapshot.paths import normalize_rel_path
-from ailine.snapshot.scan import resolve_large_file_decisions, scan_repo_files
-from ailine.web.state import get_repo_url, load_repo_url, set_repo_url
+from ailine.run.session import SessionError, run_tracked_command
+from ailine.web.state import get_repo_url, load_repo_url
 
 
 @click.group()
@@ -43,162 +35,98 @@ def cli():
 
 
 @cli.command()
-@click.argument("repo_url")
-def init(repo_url):
-    if os.path.exists(constants.REPO_DIR):
-        raise click.UsageError(
-            f"Directory {constants.REPO_DIR} already exists. Run 'cleanup' first."
-        )
-    subprocess.run(["git", "clone", repo_url, constants.REPO_DIR], check=True)
-    with open(constants.CONFIG_PATH, "w") as f:
-        f.write(repo_url)
-    subprocess.run(["git", "fetch"], check=True, cwd=constants.REPO_DIR)
-    set_repo_url(repo_url)
-    logging.info(f"Initialized AIline with {repo_url} in {constants.REPO_DIR}")
-    print(f"Initialized AIline with {repo_url} in {constants.REPO_DIR}")
-
-
-@cli.command()
 @click.option("--verbose", is_flag=True, help="Show all data about each experiment in a terminal")
 def status(verbose):
     if not os.path.exists(constants.DB_PATH):
-        return "Database not found. Run 'ailine init' and 'ailine run' first.", 500
+        raise click.ClickException(
+            f"AIline database not found at {constants.DB_PATH}. "
+            "Run 'ailine init-workspace' (or 'ailine init-demo') and 'ailine track --' "
+            "(or 'ailine run') first."
+        )
     tree = repository.fetch_status_rows()
+    if not tree:
+        click.echo("No experiments recorded yet. Use 'ailine run' to log one.")
+        return
     if verbose:
         print_formatted_data(tree)
     else:
         print_table(tree)
 
 
-@cli.command()
-@click.option("--script", default="train.py", help="Script to run")
-@click.option("--dataset", default="data.csv", help="Dataset file")
-@click.option(
-    "--storage", default=constants.DEFAULT_STORAGE_DIR, help="Directory to store snapshots"
+@cli.command(
+    "run",
+    help=(
+        "Demo flow: snapshot ./repo, optionally `dvc add` a dataset, then run "
+        "`python <script>` under MLflow. For your own projects use 'ailine track --'."
+    ),
 )
-def run(script, dataset, storage):
+@click.option("--script", default="train.py", help="Script (relative to ./repo) to execute.")
+@click.option(
+    "--dataset",
+    default="data.csv",
+    help="Dataset path inside ./repo. Only used when --dvc-add is set.",
+)
+@click.option(
+    "--storage",
+    default=constants.DEFAULT_STORAGE_DIR,
+    show_default=True,
+    help="Snapshot storage directory.",
+)
+@click.option(
+    "--dvc-add/--no-dvc-add",
+    "dvc_add",
+    default=False,
+    show_default=True,
+    help=(
+        "Run 'dvc add <dataset>' before training. Off by default; the demo uses "
+        "this to version a synthetic dataset. Real workflows should manage DVC "
+        "themselves and rely on 'ailine track --'."
+    ),
+)
+def run(script, dataset, storage, dvc_add):
     repo_url = get_repo_url()
     if not repo_url:
-        raise click.UsageError("AIline not initialized. Run 'ailine init <repo_url>' first.")
+        raise click.UsageError(
+            "Demo not initialized. Run 'ailine init-demo <repo_url>' first."
+        )
     if not os.path.exists(constants.REPO_DIR):
-        raise click.UsageError(f"Repo directory {constants.REPO_DIR} not found. Re-run 'init'.")
+        raise click.UsageError(
+            f"Repo directory {constants.REPO_DIR} not found. Re-run 'ailine init-demo'."
+        )
     if not os.path.exists(os.path.join(constants.REPO_DIR, script)):
         raise click.UsageError(f"Script {script} not found in {constants.REPO_DIR}")
-    if not os.path.exists(os.path.join(constants.REPO_DIR, dataset)):
-        raise click.UsageError(f"Dataset {dataset} not found in {constants.REPO_DIR}")
 
-    repo = git.Repo(constants.REPO_DIR)
-    latest_commit = repo.head.commit.hexsha
-    git_url = normalize_git_url(repo_url, latest_commit)
-
-    manifest_path = None
-    metadata_path = None
-    archive_bytes = None
-    included_file_count = None
-    excluded_file_count = None
-    large_file_pointer_count = None
-    diff_path = None
-
-    if repo.is_dirty(untracked_files=True):
-        policy = load_snapshot_policy()
-        entries = scan_repo_files(constants.REPO_DIR, policy)
-        entries, _store = resolve_large_file_decisions(entries, policy)
-        manifest_entries, archive_entries, manifest_extra = build_manifest(entries, storage)
-        diff_text = repo.git.diff("HEAD")
-        untracked_files = [normalize_rel_path(p) for p in repo.untracked_files]
-        snapshot_result = create_snapshot(
-            manifest_entries=manifest_entries,
-            archive_entries=archive_entries,
-            parent_commit_hash=latest_commit,
-            storage_dir=storage,
-            diff_text=diff_text,
-            untracked_files=untracked_files,
-        )
-        commit_id = snapshot_result["snapshot_hash"]
-        snapshot_path = snapshot_result["snapshot_path"]
-        manifest_path = snapshot_result["manifest_path"]
-        metadata_path = snapshot_result["metadata_path"]
-        archive_bytes = snapshot_result["archive_bytes"]
-        diff_path = snapshot_result["diff_path"]
-        commit_type = CommitType.SNAPSHOT
-        parent = latest_commit[:7]
-        included_file_count = manifest_extra["summary"]["included_file_count"]
-        excluded_file_count = manifest_extra["summary"]["excluded_file_count"]
-        large_file_pointer_count = manifest_extra["summary"]["large_file_pointer_count"]
-        click.echo(
-            "Snapshot preflight: "
-            f"files={len(entries)} included={included_file_count} "
-            f"excluded={excluded_file_count} pointers={large_file_pointer_count} "
-            f"included_bytes={manifest_extra['summary']['included_bytes']}"
-        )
-    else:
-        commit_id = latest_commit
-        commit_type = CommitType.GIT
-        snapshot_path = None
-        parent = None
-
-    dvc_cfg = load_dvc_config()
-    env_cfg = load_environment_config()
-    run_capture_cfg = load_run_capture_config()
-    original_dir = os.getcwd()
-    os.chdir(constants.REPO_DIR)
     try:
-        subprocess.run(["dvc", "add", dataset], check=True)
-        dvc_linkage = build_dvc_linkage(os.getcwd(), dvc_cfg)
-        env_fingerprint, env_fingerprint_status = collect_environment_fingerprint(
-            original_dir, env_cfg
-        )
-        run_command_payload, run_command_summary = build_run_command_payload(
-            script, dataset, storage, os.getcwd()
-        )
-        if not run_capture_cfg.get("enabled", True):
-            run_command_payload = {}
-            run_command_summary = None
-        dvc_version = f"dataset_001_v{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        config = validate_config()
+    except ConfigValidationError as exc:
+        raise click.ClickException(str(exc)) from exc
 
-        with mlflow.start_run(run_name=f"exp_{commit_id[:8]}"):
-            subprocess.run(["python", script], check=True)
-            mlflow.set_tag(
-                "commit" if commit_type == CommitType.GIT else CommitType.SNAPSHOT.value,
-                commit_id,
-            )
-            mlflow.set_tag("dataset", dvc_version)
-            mlflow.set_tag("dvc_linkage_status", dvc_linkage["status"])
-            mlflow.set_tag("env_fingerprint_status", env_fingerprint_status)
-            mlflow.set_tag("run.script", script)
-            mlflow.set_tag("run.dataset", dataset)
-            run_id = mlflow.active_run().info.run_id
-    finally:
-        os.chdir(original_dir)
+    if dvc_add:
+        if not os.path.exists(os.path.join(constants.REPO_DIR, dataset)):
+            raise click.UsageError(f"Dataset {dataset} not found in {constants.REPO_DIR}")
+        subprocess.run(["dvc", "add", dataset], check=True, cwd=constants.REPO_DIR)
 
-    record = RunRecord(
-        id=commit_id,
-        type=commit_type.value,
-        parent=parent,
-        mlflow_run=run_id,
-        dvc_version=dvc_version,
-        snapshot_path=snapshot_path,
-        timestamp=datetime.now().isoformat(),
-        git_url=git_url if commit_type == CommitType.GIT else None,
-        manifest_path=manifest_path,
-        metadata_path=metadata_path,
-        archive_bytes=archive_bytes,
-        included_file_count=included_file_count,
-        excluded_file_count=excluded_file_count,
-        large_file_pointer_count=large_file_pointer_count,
-        diff_path=diff_path,
-        dvc_linkage_json=json.dumps(dvc_linkage, sort_keys=True),
-        dvc_linkage_status=dvc_linkage["status"],
-        env_fingerprint_json=json.dumps(env_fingerprint, sort_keys=True),
-        env_fingerprint_status=env_fingerprint_status,
-        run_command_json=(
-            json.dumps(run_command_payload, sort_keys=True) if run_command_payload else None
-        ),
-        run_command_summary=run_command_summary,
+    # Demo training scripts do not start their own MLflow run, so wrap them.
+    config.track["mlflow"]["mode"] = "wrap"
+
+    git_root = os.path.abspath(constants.REPO_DIR)
+    try:
+        result = run_tracked_command(
+            git_root=git_root,
+            argv=["python", script],
+            storage=storage,
+            config=config,
+        )
+    except SessionError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    logging.info(
+        f"Demo run logged: mlflow={result.mlflow_run_id} commit={result.commit_id}"
     )
-    repository.insert_run(record)
-    logging.info(f"Experiment logged: {run_id} tied to {commit_id}")
-    print(f"Experiment logged: {run_id} tied to {commit_id}")
+    click.echo(
+        f"Demo run logged: mlflow={result.mlflow_run_id} commit={result.commit_id}"
+    )
+    sys.exit(result.exit_code)
 
 
 @cli.command()
@@ -211,32 +139,13 @@ def serve():
     app.run(host="0.0.0.0", port=5000, debug=True)
 
 
-@cli.command()
-def cleanup():
-    items_to_remove = [
-        constants.MLFLOW_STORAGE_DIR,
-        constants.REPO_DIR,
-        constants.DB_PATH,
-        constants.CONFIG_PATH,
-        constants.DEFAULT_STORAGE_DIR,
-    ]
-    for item in os.listdir("."):
-        if item.startswith("temp_") and os.path.isdir(item):
-            items_to_remove.append(item)
-
-    for item in items_to_remove:
-        if os.path.isdir(item):
-            shutil.rmtree(item, ignore_errors=True)
-            logging.info(f"Removed directory: {item}")
-            print(f"Removed directory: {item}")
-        elif os.path.isfile(item):
-            os.remove(item)
-            logging.info(f"Removed file: {item}")
-            print(f"Removed file: {item}")
-
-    set_repo_url(None)
-    logging.info("Cleanup complete")
-    print("Cleanup complete. Run 'ailine init <repo_url>' to start fresh.")
+cli.add_command(init_workspace_command)
+cli.add_command(init_demo_command)
+cli.add_command(reset_demo_command)
+cli.add_command(deprecated_init_command)
+cli.add_command(deprecated_cleanup_command)
+cli.add_command(track_command)
+cli.add_command(doctor_command)
 
 
 def main():

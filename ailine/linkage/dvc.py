@@ -1,6 +1,5 @@
-"""DVC linkage: discover outputs, classify cache/remote status, and pull-on-restore."""
+"""DVC linkage: discover outputs and classify cache/remote status."""
 
-import json
 import os
 import subprocess
 from typing import Dict, List, Optional
@@ -129,22 +128,3 @@ def build_dvc_linkage(repo_path: str, dvc_cfg: dict) -> dict:
         status = "missing"
 
     return {"status": status, "items": linkage_items, "config": dvc_cfg}
-
-
-def materialize_dvc_linkage(repo_path: str, dvc_linkage_json: str, dvc_cfg: dict) -> dict:
-    payload = json.loads(dvc_linkage_json) if dvc_linkage_json else {}
-    items = payload.get("items", [])
-    unresolved = [item["path"] for item in items if not item.get("is_in_cache")]
-    pulled = False
-
-    if unresolved and dvc_cfg.get("auto_pull_missing", True):
-        cmd = ["dvc", "pull"]
-        if dvc_cfg.get("remote_name"):
-            cmd += ["-r", dvc_cfg["remote_name"]]
-        result = subprocess.run(cmd, cwd=repo_path, check=False, capture_output=True, text=True)
-        pulled = result.returncode == 0
-        unresolved = [
-            path for path in unresolved if not os.path.exists(os.path.join(repo_path, path))
-        ]
-
-    return {"pulled": pulled, "unresolved": unresolved, "total": len(items)}

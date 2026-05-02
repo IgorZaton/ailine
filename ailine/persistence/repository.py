@@ -129,7 +129,8 @@ def fetch_commits_overview(db_path: Optional[str] = None) -> List[dict]:
         cur = conn.cursor()
         cur.execute(
             "SELECT id, type, parent, mlflow_run, dvc_version, snapshot_path, "
-            "timestamp, git_url FROM tree"
+            "timestamp, git_url, run_command_summary, dvc_linkage_status, "
+            "env_fingerprint_status FROM tree"
         )
         rows = cur.fetchall()
     finally:
@@ -144,6 +145,9 @@ def fetch_commits_overview(db_path: Optional[str] = None) -> List[dict]:
             "snapshot_path": r[5],
             "timestamp": r[6],
             "git_url": r[7],
+            "run_command_summary": r[8],
+            "dvc_linkage_status": r[9],
+            "env_fingerprint_status": r[10],
         }
         for r in rows
     ]
