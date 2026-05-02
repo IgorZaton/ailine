@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Lineage{% endblock %}
+{% block content %}
+<div class="ailine-page-head">
+    <h1 class="ailine-page-title">Lineage</h1>
+    <p class="ailine-page-lead">Every recorded run with cross-links to the code, the parent commit, the data, and the MLflow run.</p>
+</div>
+
+<div class="table-responsive ailine-table-card">
+    <table class="table table-hover ailine-table mb-0 align-middle">
+        <thead>
+            <tr>
+                <th scope="col">Record</th>
+                <th scope="col">Type</th>
+                <th scope="col">MLflow run</th>
+                <th scope="col">Git</th>
+                <th scope="col">Parent</th>
+                <th scope="col">DVC</th>
+                <th scope="col">Env</th>
+                <th scope="col">Command</th>
+                <th scope="col">When</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for entry in rows %}
+            <tr>
+                <td class="ailine-cell-mono">
+                    {% if entry.type == "git" %}
+                        <a href="{{ url_for('commit_view', commit_id=entry.id) }}" title="{{ entry.id }}"><span class="ailine-hash">{{ entry.id }}</span></a>
+                    {% elif entry.type == "snapshot" %}
+                        <a href="{{ url_for('snapshot_view', snapshot_id=entry.id) }}" title="{{ entry.id }}"><span class="ailine-hash">{{ entry.id }}</span></a>
+                    {% else %}
+                        <span class="ailine-hash" title="{{ entry.id }}">{{ entry.id }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if entry.type == "git" %}
+                        <span class="badge rounded-pill text-bg-secondary ailine-badge-type">Git</span>
+                    {% elif entry.type == "snapshot" %}
+                        <span class="badge rounded-pill text-bg-primary ailine-badge-type">Snapshot</span>
+                    {% else %}
+                        <span class="badge rounded-pill text-bg-light border ailine-badge-type">{{ entry.type }}</span>
+                    {% endif %}
+                </td>
+                <td class="ailine-cell-mono">
+                    {% if entry.mlflow_run and entry.mlflow_url %}
+                        <a href="{{ entry.mlflow_url }}" target="_blank" rel="noopener" title="{{ entry.mlflow_run }} (open in MLflow UI)"><span class="ailine-hash ailine-hash--md">{{ entry.mlflow_run }}</span></a>
+                    {% elif entry.mlflow_run %}
+                        <span class="ailine-hash ailine-hash--md" title="{{ entry.mlflow_run }} (link unavailable)">{{ entry.mlflow_run }}</span>
+                    {% else %}
+                        <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if entry.git_url %}
+                        <a href="{{ entry.git_url }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">Open</a>
+                    {% else %}
+                        <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td class="ailine-cell-mono">
+                    {% if entry.parent %}
+                        <span class="ailine-hash ailine-hash--sm" title="{{ entry.parent }}">{{ entry.parent }}</span>
+                    {% else %}
+                        <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if entry.dvc_version %}
+                        <span class="ailine-hash ailine-hash--md d-inline-block align-bottom" title="{{ entry.dvc_version }}">{{ entry.dvc_version }}</span>
+                    {% endif %}
+                    {% if entry.dvc_linkage_status %}
+                        <span class="ailine-chip small text-nowrap" title="DVC linkage status">{{ entry.dvc_linkage_status }}</span>
+                    {% elif not entry.dvc_version %}
+                        <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if entry.env_fingerprint_status %}
+                        <span class="ailine-chip small text-nowrap" title="Environment fingerprint status">{{ entry.env_fingerprint_status }}</span>
+                    {% else %}
+                        <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if entry.run_command_summary %}
+                        <code class="ailine-truncate d-inline-block align-bottom" style="max-width:min(36ch,40vw)" title="{{ entry.run_command_summary }}">{{ entry.run_command_summary }}</code>
+                    {% else %}
+                        <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td class="text-muted small text-nowrap">{{ entry.timestamp }}</td>
+            </tr>
+        {% endfor %}
+        {% if not rows %}
+            <tr class="ailine-empty-row">
+                <td colspan="9">No runs recorded yet. Use <code class="px-1">ailine track --</code> to record one.</td>
+            </tr>
+        {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<section class="mt-4">
+    <button class="btn btn-sm btn-outline-secondary"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#orphanRuns"
+            aria-expanded="false"
+            aria-controls="orphanRuns"
+            {% if not orphans %}disabled{% endif %}>
+        Unlinked MLflow runs ({{ orphans|length }})
+    </button>
+    <div class="collapse mt-3" id="orphanRuns">
+        {% if orphans %}
+        <div class="table-responsive ailine-table-card">
+            <table class="table table-sm ailine-table mb-0">
+                <thead>
+                    <tr>
+                        <th scope="col">Run</th>
+                        <th scope="col">Experiment</th>
+                        <th scope="col">Start</th>
+                        <th scope="col">Commit tag</th>
+                        <th scope="col">Snapshot tag</th>
+                        <th scope="col">Open</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for run in orphans %}
+                    <tr>
+                        <td class="ailine-cell-mono"><span class="ailine-hash ailine-hash--md" title="{{ run.run_id }}">{{ run.run_id }}</span></td>
+                        <td class="ailine-cell-mono">{{ run.experiment_id or '—' }}</td>
+                        <td class="text-muted small text-nowrap">{{ run.start_time or '—' }}</td>
+                        <td class="ailine-cell-mono">
+                            {% if run.commit_tag %}
+                                <a href="{{ url_for('commit_view', commit_id=run.commit_tag) }}" title="{{ run.commit_tag }}"><span class="ailine-hash ailine-hash--sm">{{ run.commit_tag }}</span></a>
+                            {% else %}
+                                <span class="text-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        <td class="ailine-cell-mono">
+                            {% if run.snapshot_tag %}
+                                <a href="{{ url_for('snapshot_view', snapshot_id=run.snapshot_tag) }}" title="{{ run.snapshot_tag }}"><span class="ailine-hash ailine-hash--sm">{{ run.snapshot_tag }}</span></a>
+                            {% else %}
+                                <span class="text-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if run.mlflow_url %}
+                                <a href="{{ run.mlflow_url }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">MLflow</a>
+                            {% else %}
+                                <span class="text-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
