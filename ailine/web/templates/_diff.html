@@ -1,0 +1,37 @@
+{# Render line-level styling for one unified-diff body (single file chunk). #}
+{% macro render_diff_body(text) %}
+<pre class="code-diff__body"><code>{% for line in text.splitlines() -%}
+{%- if line.startswith('@@') -%}
+<span class="code-diff__line code-diff__line--hunk">{{ line }}</span>
+{%- elif line.startswith('+++') or line.startswith('---') or line.startswith('diff ') or line.startswith('index ') -%}
+<span class="code-diff__line code-diff__line--meta">{{ line }}</span>
+{%- elif line.startswith('+') -%}
+<span class="code-diff__line code-diff__line--add">{{ line }}</span>
+{%- elif line.startswith('-') -%}
+<span class="code-diff__line code-diff__line--del">{{ line }}</span>
+{%- else -%}
+<span class="code-diff__line">{{ line }}</span>
+{%- endif -%}
+{% endfor %}</code></pre>
+{% endmacro %}
+
+{# Legacy: one blob (still works for patches without diff --git splits). #}
+{% macro render_diff(text) %}
+<div class="code-diff">
+    {{ render_diff_body(text) }}
+</div>
+{% endmacro %}
+
+{# Preferred: one card per file in the patch. #}
+{% macro render_diff_sections(sections) %}
+<div class="code-diff-stack">
+    {% for sec in sections %}
+    <article class="code-diff-file">
+        <header class="code-diff-file__header"><span class="code-diff-file__title">{{ sec.title }}</span></header>
+        <div class="code-diff-file__blob">
+            {{ render_diff_body(sec.body) }}
+        </div>
+    </article>
+    {% endfor %}
+</div>
+{% endmacro %}

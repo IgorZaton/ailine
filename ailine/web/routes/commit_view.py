@@ -1,14 +1,38 @@
-"""``/commit/<id>`` route — read-only commit viewer using git object access."""
+"""``/commit/<id>`` route — read-only commit browser using git object access."""
 
 import logging
 
 import git
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 
 from ailine.config import constants
 from ailine.persistence import repository
 from ailine.snapshot.paths import ensure_utf8_text
+from ailine.web.code_browser import (
+    build_path_tree,
+    detect_language,
+    safe_relpath,
+    truncate_text,
+)
 from ailine.web.state import load_repo_url
+
+
+def _resolve_full_commit(repo: git.Repo, commit_id: str) -> str | None:
+    for commit in repo.iter_commits():
+        if commit.hexsha == commit_id or commit.hexsha.startswith(commit_id):
+            return commit.hexsha
+    return None
+
+
+def _list_visible_paths(repo: git.Repo, full_commit_id: str) -> list[str]:
+    raw_paths = repo.git.ls_tree("-r", full_commit_id, "--name-only").splitlines()
+    visible: list[str] = []
+    for rel_path in raw_paths:
+        if any(part.startswith(".") for part in rel_path.split("/")):
+            continue
+        visible.append(rel_path)
+    visible.sort()
+    return visible
 
 
 def view(commit_id: str):
@@ -20,39 +44,47 @@ def view(commit_id: str):
 
     try:
         repo = git.Repo(constants.REPO_DIR)
-        full_commit_id = None
-        for commit in repo.iter_commits():
-            if commit.hexsha == commit_id or commit.hexsha.startswith(commit_id):
-                full_commit_id = commit.hexsha
-                break
+        full_commit_id = _resolve_full_commit(repo, commit_id)
         if not full_commit_id:
             logging.error(f"Commit {commit_id} not found in Git repository")
             return f"Commit {commit_id} not found in repository", 404
 
-        logging.info(f"Commit view using read-only git object mode for {full_commit_id}")
-        commit_files = repo.git.ls_tree("-r", full_commit_id, "--name-only").splitlines()
-        logging.info(f"Files in commit {full_commit_id}: {commit_files}")
-        files = []
-        for rel_path in commit_files:
-            path_parts = rel_path.split("/")
-            if any(part.startswith(".") for part in path_parts):
-                logging.info(f"Skipping hidden path in commit: {rel_path}")
-                continue
+        paths = _list_visible_paths(repo, full_commit_id)
+        tree = build_path_tree(paths)
+        requested = request.args.get("path")
+        selected = safe_relpath(requested, paths)
+        if requested and not selected:
+            return "File not found in commit", 404
+
+        blob = None
+        if selected:
             try:
-                content = ensure_utf8_text(repo.git.show(f"{full_commit_id}:{rel_path}"))
-                files.append({"path": rel_path, "content": content})
+                content = ensure_utf8_text(repo.git.show(f"{full_commit_id}:{selected}"))
+                content, truncated = truncate_text(content)
+                blob = {
+                    "path": selected,
+                    "content": content,
+                    "truncated": truncated,
+                    "language": detect_language(selected),
+                }
             except Exception as e:
-                logging.warning(f"Unable to read commit object for {rel_path}: {str(e)}")
-                files.append(
-                    {"path": rel_path, "content": f"Binary or unreadable file: {rel_path}"}
-                )
+                logging.warning(f"Unable to read commit object for {selected}: {str(e)}")
+                blob = {
+                    "path": selected,
+                    "content": f"Binary or unreadable file: {selected}",
+                    "truncated": False,
+                    "language": "",
+                }
 
-        logging.info(f"Found {len(files)} files for commit {full_commit_id}")
-        if not files:
-            logging.warning(f"No readable non-hidden files found for commit {full_commit_id}")
-            files.append({"path": "N/A", "content": "No files found in this commit."})
-
-        return render_template("commit.html", commit_id=commit_id, files=files, git_url=git_url)
+        return render_template(
+            "commit.html",
+            commit_id=commit_id,
+            git_url=git_url,
+            tree=tree,
+            paths=paths,
+            selected_path=selected,
+            blob=blob,
+        )
     except Exception as e:
         logging.error(f"Error in commit_view for {commit_id}: {str(e)}")
         return f"Error processing commit {commit_id}: {str(e)}", 500

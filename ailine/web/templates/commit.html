@@ -1,23 +1,42 @@
 {% extends "base.html" %}
+{% from "_tree.html" import render_tree %}
 {% block title %}Commit {{ commit_id }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/styles/github.min.css">
+{% endblock %}
+
 {% block content %}
-    <h1 class="mt-4">Commit {{ commit_id }}</h1>
-    <p><a href="{{ git_url }}" class="btn btn-primary" target="_blank">View on Git Platform</a></p>
-    <h2>Files</h2>
-    <div class="accordion" id="commitFiles">
-    {% for file in files %}
-        <div class="accordion-item">
-            <h2 class="accordion-header" id="heading{{ loop.index }}">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
-                    {{ file.path }}
-                </button>
-            </h2>
-            <div id="collapse{{ loop.index }}" class="accordion-collapse collapse" data-bs-parent="#commitFiles">
-                <div class="accordion-body">
-                    <pre>{{ file.content }}</pre>
-                </div>
+<h1 class="mt-4">Commit <code>{{ commit_id }}</code></h1>
+<div class="code-meta">
+    <a href="{{ git_url }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">View on Git platform</a>
+    <span>{{ paths|length }} file{{ '' if paths|length == 1 else 's' }}</span>
+    {% if selected_path %}<span>Selected: <code>{{ selected_path }}</code></span>{% endif %}
+</div>
+
+<div class="code-browser">
+    <aside class="code-browser__sidebar">
+        {% if paths %}
+            {{ render_tree(tree, selected_path, 'commit_view', {'commit_id': commit_id}) }}
+        {% else %}
+            <div class="code-empty">No files in this commit.</div>
+        {% endif %}
+    </aside>
+    <section class="code-browser__main">
+        {% if blob %}
+            <div class="code-blob__header">
+                <span><code>{{ blob.path }}</code></span>
+                {% if blob.truncated %}<span class="code-blob__truncated">Truncated to first 512 KiB</span>{% endif %}
             </div>
-        </div>
-    {% endfor %}
-    </div>
+            <pre class="code-blob__body"><code{% if blob.language %} class="language-{{ blob.language }}"{% endif %}>{{ blob.content }}</code></pre>
+        {% else %}
+            <div class="code-empty">Select a file from the tree to view its contents.</div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/highlight.min.js"></script>
+<script>document.querySelectorAll('pre.code-blob__body code').forEach(el => window.hljs && hljs.highlightElement(el));</script>
 {% endblock %}
