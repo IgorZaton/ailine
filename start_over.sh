@@ -1,5 +1,5 @@
-python ailine.py cleanup
-python ailine.py init git@github.com:IgorZaton/test-repo.git
+ailine cleanup
+ailine init git@github.com:IgorZaton/test-repo.git
 cd repo
 echo "print('Training...')" > train.py
 echo "data" > data.csv
