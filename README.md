@@ -1,5 +1,7 @@
 # AIline
 
+![AIline logo](ailine/web/static/icon.png)
+
 ML experiment lineage tracker with snapshot-based reproducibility.
 
 AIline captures the **exact** code that produced an experiment — including

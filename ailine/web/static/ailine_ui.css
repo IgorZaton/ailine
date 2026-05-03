@@ -42,6 +42,18 @@ body.ailine-body {
     color: #0f172a !important;
 }
 
+.ailine-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.ailine-brand-logo {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+
 .ailine-navbar .nav-link {
     font-size: 0.92rem;
     font-weight: 500;
