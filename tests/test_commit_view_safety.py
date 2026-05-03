@@ -6,16 +6,17 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import ailine
+from ailine.config import constants
 
 
 class CommitViewSafetyTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.old_db_path = ailine.DB_PATH
-        ailine.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        self.old_db_path = constants.DB_PATH
+        constants.DB_PATH = os.path.join(self.tmp.name, "test.db")
         ailine.init_db()
-        conn = sqlite3.connect(ailine.DB_PATH)
+        conn = sqlite3.connect(constants.DB_PATH)
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO tree (id, git_url) VALUES (?, ?)",
@@ -26,10 +27,10 @@ class CommitViewSafetyTests(unittest.TestCase):
         self.client = ailine.app.test_client()
 
     def tearDown(self):
-        ailine.DB_PATH = self.old_db_path
+        constants.DB_PATH = self.old_db_path
 
-    @patch("ailine.render_template")
-    @patch("ailine.git.Repo")
+    @patch("ailine.web.routes.commit_view.render_template")
+    @patch("ailine.web.routes.commit_view.git.Repo")
     def test_commit_view_uses_read_only_git_object_access(self, mock_repo_cls, mock_render):
         mock_render.return_value = "ok"
         mock_repo = MagicMock()
@@ -54,8 +55,8 @@ class CommitViewSafetyTests(unittest.TestCase):
         mock_repo.git.reset.assert_not_called()
         mock_repo.git.checkout.assert_not_called()
 
-    @patch("ailine.render_template")
-    @patch("ailine.git.Repo")
+    @patch("ailine.web.routes.commit_view.render_template")
+    @patch("ailine.web.routes.commit_view.git.Repo")
     def test_commit_view_handles_unreadable_files(self, mock_repo_cls, mock_render):
         mock_render.return_value = "ok"
         mock_repo = MagicMock()
@@ -71,8 +72,8 @@ class CommitViewSafetyTests(unittest.TestCase):
         self.assertEqual(files[0]["path"], "binary.bin")
         self.assertIn("Binary or unreadable file", files[0]["content"])
 
-    @patch("ailine.render_template")
-    @patch("ailine.git.Repo")
+    @patch("ailine.web.routes.commit_view.render_template")
+    @patch("ailine.web.routes.commit_view.git.Repo")
     def test_commit_view_sanitizes_invalid_utf8_surrogates(self, mock_repo_cls, mock_render):
         mock_render.return_value = "ok"
         mock_repo = MagicMock()

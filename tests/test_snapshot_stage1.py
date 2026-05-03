@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import ailine
+from ailine.config import constants
 
 
 class SnapshotStage1Tests(unittest.TestCase):
@@ -13,23 +14,23 @@ class SnapshotStage1Tests(unittest.TestCase):
         self.addCleanup(self.temp_dir.cleanup)
         self.repo_dir = os.path.join(self.temp_dir.name, "repo")
         os.makedirs(self.repo_dir, exist_ok=True)
-        self.original_repo_dir = ailine.REPO_DIR
-        self.original_state_dir = ailine.STATE_DIR
-        self.original_policy_store = ailine.LARGE_FILE_POLICY_STORE
-        self.original_object_store = ailine.OBJECT_STORE_DIR
-        self.original_pointer_store = ailine.POINTER_STORE_DIR
-        ailine.REPO_DIR = self.repo_dir
-        ailine.STATE_DIR = os.path.join(self.temp_dir.name, ".ailine")
-        ailine.LARGE_FILE_POLICY_STORE = os.path.join(ailine.STATE_DIR, "large-file-policy.json")
-        ailine.OBJECT_STORE_DIR = os.path.join(ailine.STATE_DIR, "objects")
-        ailine.POINTER_STORE_DIR = os.path.join(ailine.STATE_DIR, "pointers")
+        self.original_repo_dir = constants.REPO_DIR
+        self.original_state_dir = constants.STATE_DIR
+        self.original_policy_store = constants.LARGE_FILE_POLICY_STORE
+        self.original_object_store = constants.OBJECT_STORE_DIR
+        self.original_pointer_store = constants.POINTER_STORE_DIR
+        constants.REPO_DIR = self.repo_dir
+        constants.STATE_DIR = os.path.join(self.temp_dir.name, ".ailine")
+        constants.LARGE_FILE_POLICY_STORE = os.path.join(constants.STATE_DIR, "large-file-policy.json")
+        constants.OBJECT_STORE_DIR = os.path.join(constants.STATE_DIR, "objects")
+        constants.POINTER_STORE_DIR = os.path.join(constants.STATE_DIR, "pointers")
 
     def tearDown(self):
-        ailine.REPO_DIR = self.original_repo_dir
-        ailine.STATE_DIR = self.original_state_dir
-        ailine.LARGE_FILE_POLICY_STORE = self.original_policy_store
-        ailine.OBJECT_STORE_DIR = self.original_object_store
-        ailine.POINTER_STORE_DIR = self.original_pointer_store
+        constants.REPO_DIR = self.original_repo_dir
+        constants.STATE_DIR = self.original_state_dir
+        constants.LARGE_FILE_POLICY_STORE = self.original_policy_store
+        constants.OBJECT_STORE_DIR = self.original_object_store
+        constants.POINTER_STORE_DIR = self.original_pointer_store
 
     def _write_file(self, rel_path: str, content: bytes):
         full_path = os.path.join(self.repo_dir, rel_path)
@@ -86,11 +87,11 @@ class SnapshotStage1Tests(unittest.TestCase):
         self.assertEqual(extra_1["summary"]["large_file_pointer_count"], 1)
         self.assertEqual(extra_2["summary"]["large_file_pointer_count"], 1)
 
-        object_files = os.listdir(ailine.OBJECT_STORE_DIR)
+        object_files = os.listdir(constants.OBJECT_STORE_DIR)
         self.assertEqual(len(object_files), 1)
-        pointer_files = os.listdir(ailine.POINTER_STORE_DIR)
+        pointer_files = os.listdir(constants.POINTER_STORE_DIR)
         self.assertEqual(len(pointer_files), 1)
-        with open(os.path.join(ailine.POINTER_STORE_DIR, pointer_files[0]), "r", encoding="utf-8") as f:
+        with open(os.path.join(constants.POINTER_STORE_DIR, pointer_files[0]), "r", encoding="utf-8") as f:
             pointer_payload = json.load(f)
         self.assertEqual(pointer_payload["path"], "big.bin")
 

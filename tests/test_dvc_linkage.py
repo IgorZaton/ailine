@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import ailine
+from ailine.config import constants
 
 
 class DvcLinkageTests(unittest.TestCase):
@@ -13,11 +14,11 @@ class DvcLinkageTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.repo_dir = os.path.join(self.tmp.name, "repo")
         os.makedirs(self.repo_dir, exist_ok=True)
-        self.old_db_path = ailine.DB_PATH
-        ailine.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        self.old_db_path = constants.DB_PATH
+        constants.DB_PATH = os.path.join(self.tmp.name, "test.db")
 
     def tearDown(self):
-        ailine.DB_PATH = self.old_db_path
+        constants.DB_PATH = self.old_db_path
 
     def _write_text(self, rel_path: str, content: str):
         full = os.path.join(self.repo_dir, rel_path)
@@ -36,7 +37,7 @@ class DvcLinkageTests(unittest.TestCase):
         self.assertEqual(outputs[0]["path"], "data.csv")
         self.assertEqual(outputs[0]["out"]["md5"], "abc123")
 
-    @patch("subprocess.run")
+    @patch("ailine.linkage.dvc.subprocess.run")
     def test_build_dvc_linkage_classifies_local_only(self, mock_run):
         self._write_text(
             "data.csv.dvc",
@@ -53,7 +54,7 @@ class DvcLinkageTests(unittest.TestCase):
         self.assertEqual(linkage["items"][0]["hash_value"], "abc123")
         self.assertTrue(linkage["items"][0]["is_in_cache"])
 
-    @patch("subprocess.run")
+    @patch("ailine.linkage.dvc.subprocess.run")
     def test_build_dvc_linkage_remote_ready(self, mock_run):
         self._write_text(
             "data.csv.dvc",
@@ -68,7 +69,7 @@ class DvcLinkageTests(unittest.TestCase):
         self.assertTrue(linkage["items"][0]["has_remote"])
         self.assertEqual(linkage["items"][0]["remote_name"], "origin")
 
-    @patch("subprocess.run")
+    @patch("ailine.linkage.dvc.subprocess.run")
     def test_build_dvc_linkage_missing_when_no_cache_and_no_remote(self, mock_run):
         self._write_text(
             "data.csv.dvc",
@@ -83,7 +84,7 @@ class DvcLinkageTests(unittest.TestCase):
 
     def test_db_schema_contains_dvc_columns(self):
         ailine.init_db()
-        conn = sqlite3.connect(ailine.DB_PATH)
+        conn = sqlite3.connect(constants.DB_PATH)
         cur = conn.cursor()
         cur.execute("PRAGMA table_info(tree)")
         cols = {row[1] for row in cur.fetchall()}

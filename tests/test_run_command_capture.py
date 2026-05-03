@@ -3,7 +3,8 @@ import tempfile
 import unittest
 
 import ailine
-import utils
+from ailine.cli.formatting import print_table
+from ailine.config import constants
 
 
 class RunCommandCaptureTests(unittest.TestCase):
@@ -23,11 +24,11 @@ class RunCommandCaptureTests(unittest.TestCase):
 
     def test_init_db_adds_run_command_columns(self):
         with tempfile.TemporaryDirectory() as tmp:
-            old_db = ailine.DB_PATH
+            old_db = constants.DB_PATH
             try:
-                ailine.DB_PATH = f"{tmp}/test.db"
+                constants.DB_PATH = f"{tmp}/test.db"
                 ailine.init_db()
-                conn = sqlite3.connect(ailine.DB_PATH)
+                conn = sqlite3.connect(constants.DB_PATH)
                 cur = conn.cursor()
                 cur.execute("PRAGMA table_info(tree)")
                 columns = {row[1] for row in cur.fetchall()}
@@ -35,7 +36,7 @@ class RunCommandCaptureTests(unittest.TestCase):
                 self.assertIn("run_command_json", columns)
                 self.assertIn("run_command_summary", columns)
             finally:
-                ailine.DB_PATH = old_db
+                constants.DB_PATH = old_db
 
     def test_table_output_includes_command_summary(self):
         data = [
@@ -51,7 +52,7 @@ class RunCommandCaptureTests(unittest.TestCase):
             }
         ]
         # smoke check it renders without exceptions
-        utils.print_table(data)
+        print_table(data)
 
 
 if __name__ == "__main__":

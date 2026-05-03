@@ -1,20 +1,20 @@
+"""Terminal formatters for ``ailine status``."""
+
 from datetime import datetime
 
 
-def format_timestamp(timestamp):
-    """Convert timestamp to readable format"""
-    dt = datetime.fromisoformat(timestamp)
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+def format_timestamp(timestamp: str) -> str:
+    return datetime.fromisoformat(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+
 
 def print_formatted_data(data):
-    """Print formatted data in terminal"""
     print("\nDataset Versions:")
     print("-" * 80)
-    
+
     for idx, item in enumerate(data, 1):
         print(f"\nVersion {idx}:")
         print("-" * 20)
-        
+
         print(f"{'ID':<15}: {item['id']}")
         print(f"{'Type':<15}: {item['type']}")
         print(f"{'Parent':<15}: {item['parent'] or 'None'}")
@@ -42,7 +42,8 @@ def print_formatted_data(data):
                 print(
                     f"  - {dvc_item.get('path')} "
                     f"[{dvc_item.get('hash_algo')}={dvc_item.get('hash_value')}] "
-                    f"in_cache={dvc_item.get('is_in_cache')} remote={dvc_item.get('remote_probe_status')}"
+                    f"in_cache={dvc_item.get('is_in_cache')} "
+                    f"remote={dvc_item.get('remote_probe_status')}"
                 )
         run_payload = item.get("run_command_payload") or {}
         if run_payload:
@@ -52,22 +53,27 @@ def print_formatted_data(data):
             print(f"  - dataset={run_payload.get('dataset')}")
             print(f"  - storage={run_payload.get('storage')}")
             print(f"  - cwd={run_payload.get('cwd')}")
-    
+
     print("-" * 80)
+
 
 def print_table(data):
     print("\nCommits and Snapshots:")
     print("-" * 84)
-    print(f"{'#':<3} {'Type':<10} {'ID':<20} {'Version':<20} {'DVC':<12} {'Env':<10} {'Cmd':<18} {'Paths':<6} {'Timestamp':<16}")
+    print(
+        f"{'#':<3} {'Type':<10} {'ID':<20} {'Version':<20} {'DVC':<12} {'Env':<10} "
+        f"{'Cmd':<18} {'Paths':<6} {'Timestamp':<16}"
+    )
     print("-" * 84)
-    
+
     for idx, item in enumerate(data, 1):
         print(
             f"{idx:<3} {item['type']:<10} {item['id'][:8]:<20} {item['dvc_version']:<20} "
-            f"{item.get('dvc_linkage_status', 'missing'):<12} {item.get('env_fingerprint_status', 'missing'):<10} "
+            f"{item.get('dvc_linkage_status', 'missing'):<12} "
+            f"{item.get('env_fingerprint_status', 'missing'):<10} "
             f"{(item.get('run_command_summary') or 'None')[:18]:<18} "
             f"{item.get('dvc_linkage_count', 0):<6} "
             f"{format_timestamp(item['timestamp']):<16}"
         )
-    
+
     print("-" * 84)
