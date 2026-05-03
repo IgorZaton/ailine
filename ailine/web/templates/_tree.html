@@ -1,0 +1,20 @@
+{% macro render_tree(nodes, selected_path, endpoint, endpoint_kwargs) %}
+<ul class="code-tree__group">
+    {% for node in nodes %}
+        {% if node.type == 'dir' %}
+            <li>
+                <div class="code-tree__dir"><span class="code-tree__icon">▾</span>{{ node.name }}/</div>
+                {{ render_tree(node.children, selected_path, endpoint, endpoint_kwargs) }}
+            </li>
+        {% else %}
+            <li>
+                <a class="code-tree__row {% if selected_path == node.path %}code-tree__row--active{% endif %}"
+                   href="{{ url_for(endpoint, path=node.path, **endpoint_kwargs) }}"
+                   title="{{ node.path }}">
+                    <span class="code-tree__icon">·</span>{{ node.name }}
+                </a>
+            </li>
+        {% endif %}
+    {% endfor %}
+</ul>
+{% endmacro %}

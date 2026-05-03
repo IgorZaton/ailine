@@ -29,65 +29,93 @@ class CommitViewSafetyTests(unittest.TestCase):
     def tearDown(self):
         constants.DB_PATH = self.old_db_path
 
-    @patch("ailine.web.routes.commit_view.render_template")
-    @patch("ailine.web.routes.commit_view.git.Repo")
-    def test_commit_view_uses_read_only_git_object_access(self, mock_repo_cls, mock_render):
-        mock_render.return_value = "ok"
+    def _make_repo_mock(self, paths):
         mock_repo = MagicMock()
         mock_repo.iter_commits.return_value = [SimpleNamespace(hexsha="abc1234full")]
-        mock_repo.git.ls_tree.return_value = "train.py\n.hidden.txt\nnotes/readme.md\n"
+        mock_repo.git.ls_tree.return_value = "\n".join(paths) + "\n"
+        return mock_repo
 
-        def _show(spec):
-            if spec.endswith("notes/readme.md"):
-                return "readme"
-            if spec.endswith("train.py"):
-                return "print('x')"
-            raise RuntimeError("should not happen")
-
-        mock_repo.git.show.side_effect = _show
+    @patch("ailine.web.routes.commit_view.render_template")
+    @patch("ailine.web.routes.commit_view.git.Repo")
+    def test_index_lists_paths_without_loading_any_blob(self, mock_repo_cls, mock_render):
+        mock_render.return_value = "ok"
+        mock_repo = self._make_repo_mock(["train.py", ".hidden.txt", "notes/readme.md"])
         mock_repo_cls.return_value = mock_repo
 
         response = self.client.get("/commit/abc1234")
         self.assertEqual(response.status_code, 200)
         mock_repo.git.ls_tree.assert_called_once()
-        self.assertEqual(mock_repo.git.show.call_count, 2)
+        mock_repo.git.show.assert_not_called()
         mock_repo.git.clean.assert_not_called()
         mock_repo.git.reset.assert_not_called()
         mock_repo.git.checkout.assert_not_called()
+        _, kwargs = mock_render.call_args
+        self.assertIsNone(kwargs["blob"])
+        self.assertEqual(kwargs["paths"], ["notes/readme.md", "train.py"])
 
     @patch("ailine.web.routes.commit_view.render_template")
     @patch("ailine.web.routes.commit_view.git.Repo")
-    def test_commit_view_handles_unreadable_files(self, mock_repo_cls, mock_render):
+    def test_path_query_loads_single_blob(self, mock_repo_cls, mock_render):
         mock_render.return_value = "ok"
-        mock_repo = MagicMock()
-        mock_repo.iter_commits.return_value = [SimpleNamespace(hexsha="abc1234full")]
-        mock_repo.git.ls_tree.return_value = "binary.bin\n"
+        mock_repo = self._make_repo_mock(["train.py", "notes/readme.md"])
+        mock_repo.git.show.return_value = "print('x')"
+        mock_repo_cls.return_value = mock_repo
+
+        response = self.client.get("/commit/abc1234?path=train.py")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_repo.git.show.call_count, 1)
+        _, kwargs = mock_render.call_args
+        self.assertEqual(kwargs["blob"]["path"], "train.py")
+        self.assertEqual(kwargs["blob"]["language"], "python")
+        self.assertFalse(kwargs["blob"]["truncated"])
+
+    @patch("ailine.web.routes.commit_view.render_template")
+    @patch("ailine.web.routes.commit_view.git.Repo")
+    def test_unreadable_file_falls_back_to_message(self, mock_repo_cls, mock_render):
+        mock_render.return_value = "ok"
+        mock_repo = self._make_repo_mock(["binary.bin"])
         mock_repo.git.show.side_effect = RuntimeError("binary")
         mock_repo_cls.return_value = mock_repo
 
-        response = self.client.get("/commit/abc1234")
+        response = self.client.get("/commit/abc1234?path=binary.bin")
         self.assertEqual(response.status_code, 200)
-        args, kwargs = mock_render.call_args
-        files = kwargs["files"]
-        self.assertEqual(files[0]["path"], "binary.bin")
-        self.assertIn("Binary or unreadable file", files[0]["content"])
+        _, kwargs = mock_render.call_args
+        self.assertIn("Binary or unreadable file", kwargs["blob"]["content"])
+
+    @patch("ailine.web.routes.commit_view.render_template")
+    @patch("ailine.web.routes.commit_view.git.Repo")
+    def test_path_traversal_rejected(self, mock_repo_cls, mock_render):
+        mock_render.return_value = "ok"
+        mock_repo = self._make_repo_mock(["train.py"])
+        mock_repo_cls.return_value = mock_repo
+
+        response = self.client.get("/commit/abc1234?path=../../etc/passwd")
+        self.assertEqual(response.status_code, 404)
+        mock_repo.git.show.assert_not_called()
+
+    @patch("ailine.web.routes.commit_view.render_template")
+    @patch("ailine.web.routes.commit_view.git.Repo")
+    def test_unknown_path_rejected(self, mock_repo_cls, mock_render):
+        mock_render.return_value = "ok"
+        mock_repo = self._make_repo_mock(["train.py"])
+        mock_repo_cls.return_value = mock_repo
+
+        response = self.client.get("/commit/abc1234?path=does_not_exist.py")
+        self.assertEqual(response.status_code, 404)
+        mock_repo.git.show.assert_not_called()
 
     @patch("ailine.web.routes.commit_view.render_template")
     @patch("ailine.web.routes.commit_view.git.Repo")
     def test_commit_view_sanitizes_invalid_utf8_surrogates(self, mock_repo_cls, mock_render):
         mock_render.return_value = "ok"
-        mock_repo = MagicMock()
-        mock_repo.iter_commits.return_value = [SimpleNamespace(hexsha="abc1234full")]
-        mock_repo.git.ls_tree.return_value = "strange.txt\n"
+        mock_repo = self._make_repo_mock(["strange.txt"])
         mock_repo.git.show.return_value = "bad-surrogate-\udccb"
         mock_repo_cls.return_value = mock_repo
 
-        response = self.client.get("/commit/abc1234")
+        response = self.client.get("/commit/abc1234?path=strange.txt")
         self.assertEqual(response.status_code, 200)
         _, kwargs = mock_render.call_args
-        files = kwargs["files"]
-        self.assertEqual(files[0]["path"], "strange.txt")
-        self.assertIn("bad-surrogate-", files[0]["content"])
+        self.assertIn("bad-surrogate-", kwargs["blob"]["content"])
 
 
 if __name__ == "__main__":

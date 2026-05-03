@@ -36,6 +36,15 @@ ailine serve    # MLflow UI + Flask on :5001 / :5000 in one process
 
 Then open `http://localhost:5000` for ailine and `http://localhost:5001` for MLflow.
 
+## Code browser (commit / snapshot views)
+
+The `/commit/<id>` and `/snapshot/<id>` pages render a left-hand file tree with
+a single-file blob view on the right. Use `?path=<rel/path>` to deep-link to a
+specific file. Blobs and patches are capped at the first 512 KiB; oversized or
+binary files are flagged in the header. Snapshots add a `?view=diff` tab that
+renders the stored unified patch (`diff_path`) against the parent commit, split
+into one card per file (split on `diff --git` headers) for readability.
+
 ## Configuration
 
 | Env var | Purpose |

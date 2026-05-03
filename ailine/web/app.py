@@ -8,7 +8,12 @@ from ailine.config import constants
 
 
 def create_app() -> Flask:
-    flask_app = Flask(__name__, template_folder="templates")
+    flask_app = Flask(
+        __name__,
+        template_folder="templates",
+        static_folder="static",
+        static_url_path="/static",
+    )
     from ailine.web.routes import register_routes
 
     register_routes(flask_app)

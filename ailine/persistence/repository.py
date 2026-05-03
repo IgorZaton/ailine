@@ -169,3 +169,28 @@ def fetch_snapshot_location(snapshot_id: str, db_path: Optional[str] = None):
     finally:
         conn.close()
     return row
+
+
+def fetch_snapshot_browser_row(
+    snapshot_id: str, db_path: Optional[str] = None
+) -> Optional[dict]:
+    """Fetch fields needed by the snapshot code browser (tree + blob + diff)."""
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT snapshot_path, parent, manifest_path, diff_path "
+            "FROM tree WHERE id = ?",
+            (snapshot_id,),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    return {
+        "snapshot_path": row[0],
+        "parent": row[1],
+        "manifest_path": row[2],
+        "diff_path": row[3],
+    }
