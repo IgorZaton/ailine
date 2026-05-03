@@ -6,8 +6,9 @@
     <p class="ailine-page-lead">Every recorded run with cross-links to the code, the parent commit, the data, and the MLflow run.</p>
 </div>
 
-<div class="table-responsive ailine-table-card">
-    <table class="table table-hover ailine-table mb-0 align-middle">
+<div class="ailine-table-card">
+    <div class="table-responsive">
+    <table class="table table-hover ailine-table ailine-lineage-table mb-0 align-middle">
         <thead>
             <tr>
                 <th scope="col">Record</th>
@@ -17,7 +18,7 @@
                 <th scope="col">Parent</th>
                 <th scope="col">DVC</th>
                 <th scope="col">Env</th>
-                <th scope="col">Command</th>
+                <th scope="col" class="ailine-col-command">Command</th>
                 <th scope="col">When</th>
             </tr>
         </thead>
@@ -82,9 +83,9 @@
                         <span class="text-muted">&mdash;</span>
                     {% endif %}
                 </td>
-                <td>
+                <td class="ailine-col-command">
                     {% if entry.run_command_summary %}
-                        <code class="ailine-truncate d-inline-block align-bottom" style="max-width:min(36ch,40vw)" title="{{ entry.run_command_summary }}">{{ entry.run_command_summary }}</code>
+                        <code class="ailine-cell-mono" title="{{ entry.run_command_summary }}">{{ entry.run_command_summary }}</code>
                     {% else %}
                         <span class="text-muted">&mdash;</span>
                     {% endif %}
@@ -99,6 +100,7 @@
         {% endif %}
         </tbody>
     </table>
+    </div>
 </div>
 
 <section class="mt-4">
@@ -113,7 +115,8 @@
     </button>
     <div class="collapse mt-3" id="orphanRuns">
         {% if orphans %}
-        <div class="table-responsive ailine-table-card">
+        <div class="ailine-table-card">
+            <div class="table-responsive">
             <table class="table table-sm ailine-table mb-0">
                 <thead>
                     <tr>
@@ -156,6 +159,7 @@
                 {% endfor %}
                 </tbody>
             </table>
+            </div>
         </div>
         {% endif %}
     </div>
