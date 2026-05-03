@@ -30,6 +30,7 @@ from ailine.config.defaults import (
     REMOVED_DVC_KEYS,
     SUPPORTED_PROJECT_VERSIONS,
     VALID_DVC_VERIFY_LEVELS,
+    VALID_MLFLOW_INHERIT_NAME_SYNC,
     VALID_MLFLOW_MODES,
     VALID_PROJECT_MODES,
 )
@@ -126,6 +127,11 @@ def _validate_track(raw: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(mlflow_cfg["set_env"], bool):
         raise ConfigValidationError(
             "track.mlflow.set_env must be true/false."
+        )
+    if mlflow_cfg["inherit_name_sync"] not in VALID_MLFLOW_INHERIT_NAME_SYNC:
+        raise ConfigValidationError(
+            f"Invalid track.mlflow.inherit_name_sync '{mlflow_cfg['inherit_name_sync']}'. "
+            f"Allowed: {sorted(VALID_MLFLOW_INHERIT_NAME_SYNC)}."
         )
 
     dvc_cfg = cfg["dvc"]

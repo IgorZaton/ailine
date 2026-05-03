@@ -1,10 +1,12 @@
 """End-to-end smoke tests for the ``ailine track`` Click command."""
 
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from click.testing import CliRunner
 
@@ -13,16 +15,21 @@ from ailine.config import constants
 from ailine.persistence.db import init_db
 
 
-def _bootstrap_repo(tmp: str) -> str:
-    repo = os.path.join(tmp, "repo")
+def _bootstrap_repo(
+    tmp: str, *, mlflow_mode: str | None = None, repo_name: str = "repo"
+) -> str:
+    repo = os.path.join(tmp, repo_name)
     os.makedirs(repo)
     subprocess.run(["git", "init", "-q", repo], check=True)
     subprocess.run(["git", "-C", repo, "config", "user.email", "t@t.t"], check=True)
     subprocess.run(["git", "-C", repo, "config", "user.name", "t"], check=True)
     with open(os.path.join(repo, "README.md"), "w") as f:
         f.write("hi\n")
+    cfg_lines = ["project:\n", "  version: 1\n", "  mode: track\n"]
+    if mlflow_mode is not None:
+        cfg_lines.extend(["track:\n", "  mlflow:\n", f"    mode: {mlflow_mode}\n"])
     with open(os.path.join(repo, ".ailine.yml"), "w") as f:
-        f.write("project:\n  version: 1\n  mode: track\n")
+        f.writelines(cfg_lines)
     subprocess.run(["git", "-C", repo, "add", "."], check=True)
     subprocess.run(["git", "-C", repo, "commit", "-q", "-m", "init"], check=True)
     return repo
@@ -82,6 +89,81 @@ class TrackCommandTests(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(track_command, [])
         self.assertNotEqual(result.exit_code, 0)
+
+    def test_track_custom_name_persisted(self):
+        runner = CliRunner()
+        storage = os.path.join(self.tmp.name, "snapshots2")
+        label = "my-baseline-v2"
+        result = runner.invoke(
+            track_command,
+            [
+                "--storage",
+                storage,
+                "--config",
+                self.cfg_path,
+                "--name",
+                label,
+                "--",
+                sys.executable,
+                "-c",
+                "print('n')",
+            ],
+        )
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        conn = sqlite3.connect(constants.DB_PATH)
+        try:
+            row = conn.execute("SELECT record_name FROM tree LIMIT 1").fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row[0], label)
+
+    def test_track_preview_stderr_shows_name(self):
+        runner = CliRunner()
+        storage = os.path.join(self.tmp.name, "snapshots-prev")
+        result = runner.invoke(
+            track_command,
+            ["--storage", storage, "--config", self.cfg_path, "--", sys.executable, "-c", "print(0)"],
+        )
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        out = result.output
+        self.assertIn("ailine track:", out)
+        self.assertIn("name=", out)
+        self.assertIn("repo=", out)
+
+    def test_track_preview_includes_mlflow_run_name_when_wrap(self):
+        os.chdir(self.original_cwd)
+        wrap_repo = _bootstrap_repo(self.tmp.name, mlflow_mode="wrap", repo_name="repo_wrap")
+        os.chdir(wrap_repo)
+        try:
+            runner = CliRunner()
+            cfg = os.path.join(wrap_repo, ".ailine.yml")
+            storage = os.path.join(self.tmp.name, "snapshots-wrap")
+            with patch("ailine.run.session.mlflow.start_run") as start_run, patch(
+                "ailine.run.session.mlflow.active_run"
+            ) as active_run:
+                ctx = start_run.return_value
+                ctx.__enter__.return_value = None
+                ctx.__exit__.return_value = False
+                active_run.return_value.info.run_id = "rid-wrap"
+                result = runner.invoke(
+                    track_command,
+                    [
+                        "--storage",
+                        storage,
+                        "--config",
+                        cfg,
+                        "--name",
+                        "wrap-preview-label",
+                        "--",
+                        sys.executable,
+                        "-c",
+                        "print(0)",
+                    ],
+                )
+            self.assertEqual(result.exit_code, 0, msg=result.output)
+            self.assertIn("mlflow_run_name='wrap-preview-label'", result.output)
+        finally:
+            os.chdir(self.repo)
 
 
 if __name__ == "__main__":

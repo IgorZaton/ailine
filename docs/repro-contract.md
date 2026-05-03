@@ -54,3 +54,7 @@ Dirty-run snapshot metadata contains:
 - include/exclude counts
 - large-file pointers and decision source
 - tracked diff path and untracked file list
+
+For **intent, limits, and replay expectations** (what “as close as practical”
+means for Python ML), see **Replay expectations** in
+[track-contract.md](track-contract.md).

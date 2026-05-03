@@ -43,6 +43,7 @@ class RunCommandCaptureTests(unittest.TestCase):
             {
                 "id": "abc123456",
                 "type": "git",
+                "record_name": "curious-panda",
                 "dvc_version": "dataset_v1",
                 "dvc_linkage_status": "local_only",
                 "env_fingerprint_status": "complete",

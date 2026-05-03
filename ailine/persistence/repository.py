@@ -16,8 +16,9 @@ _INSERT_SQL = """INSERT OR REPLACE INTO tree
     (id, type, parent, mlflow_run, dvc_version, snapshot_path, timestamp, git_url,
      manifest_path, metadata_path, archive_bytes, included_file_count, excluded_file_count,
      large_file_pointer_count, diff_path, dvc_linkage_json, dvc_linkage_status,
-     env_fingerprint_json, env_fingerprint_status, run_command_json, run_command_summary)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+     env_fingerprint_json, env_fingerprint_status, run_command_json, run_command_summary,
+     record_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
 
 @dataclass
@@ -43,6 +44,7 @@ class RunRecord:
     env_fingerprint_status: Optional[str] = None
     run_command_json: Optional[str] = None
     run_command_summary: Optional[str] = None
+    record_name: Optional[str] = None
 
     def as_row(self) -> tuple:
         return (
@@ -67,6 +69,7 @@ class RunRecord:
             self.env_fingerprint_status,
             self.run_command_json,
             self.run_command_summary,
+            self.record_name,
         )
 
 
@@ -90,7 +93,7 @@ def fetch_status_rows(db_path: Optional[str] = None) -> List[dict]:
         cur.execute(
             "SELECT id, type, parent, mlflow_run, dvc_version, snapshot_path, timestamp, "
             "git_url, dvc_linkage_json, dvc_linkage_status, env_fingerprint_json, "
-            "env_fingerprint_status, run_command_json, run_command_summary FROM tree"
+            "env_fingerprint_status, run_command_json, run_command_summary, record_name FROM tree"
         )
         rows = cur.fetchall()
     finally:
@@ -118,6 +121,7 @@ def fetch_status_rows(db_path: Optional[str] = None) -> List[dict]:
                 "env_fingerprint": env_payload,
                 "run_command_summary": r[13],
                 "run_command_payload": run_command_payload,
+                "record_name": r[14],
             }
         )
     return result
@@ -130,7 +134,7 @@ def fetch_commits_overview(db_path: Optional[str] = None) -> List[dict]:
         cur.execute(
             "SELECT id, type, parent, mlflow_run, dvc_version, snapshot_path, "
             "timestamp, git_url, run_command_summary, dvc_linkage_status, "
-            "env_fingerprint_status FROM tree"
+            "env_fingerprint_status, record_name FROM tree"
         )
         rows = cur.fetchall()
     finally:
@@ -148,6 +152,7 @@ def fetch_commits_overview(db_path: Optional[str] = None) -> List[dict]:
             "run_command_summary": r[8],
             "dvc_linkage_status": r[9],
             "env_fingerprint_status": r[10],
+            "record_name": r[11],
         }
         for r in rows
     ]

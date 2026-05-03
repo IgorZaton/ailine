@@ -110,6 +110,16 @@ body.ailine-body {
     max-width: min(24ch, 100%);
 }
 
+/* Detail headers: full hex ids without ellipsis (40-char git / 64-char snapshot). */
+.ailine-hash.ailine-hash--full,
+.ailine-page-title .ailine-hash.ailine-hash--full {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-all;
+}
+
 /* Path / long labels in flex rows */
 .ailine-truncate {
     min-width: 0;

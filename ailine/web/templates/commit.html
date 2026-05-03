@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_tree.html" import render_tree %}
-{% block title %}Commit {{ commit_id[:8] }}…{% endblock %}
+{% block title %}Commit {{ resolved_commit_id }}{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/styles/github.min.css">
@@ -9,7 +9,7 @@
 {% block content %}
 <div class="ailine-detail-wrap">
     <div class="ailine-page-head">
-        <h1 class="ailine-page-title">Commit <span class="ailine-hash" title="{{ commit_id }}">{{ commit_id }}</span></h1>
+        <h1 class="ailine-page-title">Commit <span class="ailine-hash ailine-hash--full" title="{{ resolved_commit_id }}">{{ resolved_commit_id }}</span></h1>
         <p class="ailine-page-lead">Browse this revision read-only. Paths use safe links; pick a file on the left.</p>
         <div class="ailine-meta-row">
             <a href="{{ git_url }}" class="btn btn-sm btn-primary" target="_blank" rel="noopener">Open on Git host</a>

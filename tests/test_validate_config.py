@@ -26,6 +26,7 @@ class ValidateConfigTests(unittest.TestCase):
         self.assertFalse(result.config_exists)
         self.assertEqual(result.project["version"], 1)
         self.assertEqual(result.track["mlflow"]["mode"], "inherit")
+        self.assertEqual(result.track["mlflow"]["inherit_name_sync"], "auto")
         self.assertEqual(result.snapshot["large_file_mode"], "prompt")
 
     def test_minimal_config_is_valid(self):
@@ -50,6 +51,12 @@ class ValidateConfigTests(unittest.TestCase):
         with self.assertRaises(ConfigValidationError) as ctx:
             validate_config(path)
         self.assertIn("track.mlflow.mode", str(ctx.exception))
+
+    def test_invalid_mlflow_inherit_name_sync_raises(self):
+        path = self._write("track:\n  mlflow:\n    inherit_name_sync: maybe\n")
+        with self.assertRaises(ConfigValidationError) as ctx:
+            validate_config(path)
+        self.assertIn("track.mlflow.inherit_name_sync", str(ctx.exception))
 
     def test_invalid_dvc_verify_level_raises(self):
         path = self._write('track:\n  dvc:\n    verify: "loud"\n')

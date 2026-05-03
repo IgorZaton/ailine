@@ -15,8 +15,9 @@ def _make_runs_df(records):
 
 
 class _FakeMlflowRun:
-    def __init__(self, experiment_id):
+    def __init__(self, experiment_id, tags=None):
         self.info = type("Info", (), {"experiment_id": experiment_id})()
+        self.data = type("Data", (), {"tags": dict(tags) if tags else {}})()
 
 
 class LineagePageTests(unittest.TestCase):
@@ -32,7 +33,7 @@ class LineagePageTests(unittest.TestCase):
             cur.execute(
                 "INSERT INTO tree (id, type, mlflow_run, timestamp, "
                 "run_command_summary, dvc_linkage_status, env_fingerprint_status, "
-                "git_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "git_url, record_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     "abc1234",
                     "git",
@@ -42,6 +43,7 @@ class LineagePageTests(unittest.TestCase):
                     "ok",
                     "ok",
                     "https://example.com/commit/abc1234",
+                    "demo-run-label",
                 ),
             )
             conn.commit()
@@ -57,7 +59,9 @@ class LineagePageTests(unittest.TestCase):
     def test_root_renders_main_table_with_resolved_mlflow_url(
         self, mock_get_run, mock_search_runs
     ):
-        mock_get_run.return_value = _FakeMlflowRun(experiment_id="42")
+        mock_get_run.return_value = _FakeMlflowRun(
+            experiment_id="42", tags={"mlflow.runName": "demo-run-label"}
+        )
         mock_search_runs.return_value = _make_runs_df([])
 
         response = self.client.get("/")
@@ -66,6 +70,8 @@ class LineagePageTests(unittest.TestCase):
         body = response.data.decode("utf-8")
         self.assertIn("Lineage", body)
         self.assertIn("abc1234", body)
+        self.assertIn("demo-run-label", body)
+        self.assertNotIn("name mismatch", body)
         self.assertIn("python train.py", body)
         expected_url_fragment = (
             constants.MLFLOW_UI_BASE.rstrip("/") + "/#/experiments/42/runs/linked-run-1"
@@ -77,7 +83,9 @@ class LineagePageTests(unittest.TestCase):
     @patch("ailine.integrations.mlflow_links.mlflow.get_run")
     def test_orphan_runs_are_filtered_and_listed(self, mock_get_run, mock_search_runs):
         def _get_run(rid):
-            return _FakeMlflowRun(experiment_id="9" if rid == "orphan-run-1" else "42")
+            if rid == "orphan-run-1":
+                return _FakeMlflowRun("9", {"mlflow.runName": "orphan-exp"})
+            return _FakeMlflowRun("42", {"mlflow.runName": "linked-tag"})
 
         mock_get_run.side_effect = _get_run
         mock_search_runs.return_value = _make_runs_df(
@@ -95,6 +103,7 @@ class LineagePageTests(unittest.TestCase):
                     "start_time": "2026-05-03T00:00:01",
                     "tags.commit": None,
                     "tags.snapshot": None,
+                    "tags.mlflow.runName": "orphan-exp",
                 },
             ]
         )
@@ -105,6 +114,23 @@ class LineagePageTests(unittest.TestCase):
         body = response.data.decode("utf-8")
         self.assertIn("Unlinked MLflow runs (1)", body)
         self.assertIn("orphan-run-1", body)
+        self.assertIn("orphan-exp", body)
+
+    @patch("ailine.web.routes.lineage.mlflow.search_runs")
+    @patch("ailine.integrations.mlflow_links.mlflow.get_run")
+    def test_main_row_shows_name_mismatch_when_mlflow_tag_differs(
+        self, mock_get_run, mock_search_runs
+    ):
+        mock_get_run.return_value = _FakeMlflowRun(
+            experiment_id="42", tags={"mlflow.runName": "other-mlflow-label"}
+        )
+        mock_search_runs.return_value = _make_runs_df([])
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode("utf-8")
+        self.assertIn("name mismatch", body)
 
     @patch("ailine.web.routes.lineage.mlflow.search_runs")
     @patch("ailine.integrations.mlflow_links.mlflow.get_run")

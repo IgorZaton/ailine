@@ -132,10 +132,48 @@ For every recorded run AIline persists:
 - DVC linkage (paths, hashes, cache/remote presence),
 - environment fingerprint (Python, platform, `poetry.lock` sha, package versions),
 - the exact argv + cwd of the child process,
-- the MLflow run id (when `mode == 'wrap'`; `inherit` records via tags inside
-  your script).
+- the MLflow run id (`wrap`: outer run; `inherit`: best-effort match to a run
+  started by your script during the child process, when discoverable).
 
 See [repro-contract.md](repro-contract.md) for the snapshot guarantees.
+
+## Replay expectations (Python ML, best-effort)
+
+AIline is aimed at **Python-centric ML** projects. For each run it stores what is
+needed to argue the **next execution can be brought as close as is reasonable**
+to the recorded one—not a hardware certification or a line-by-line audit of
+every third-party library.
+
+**What we maximize (today):**
+
+- **Pre-run workspace state** under the Git work-tree: if the tree is “dirty”
+  (including untracked files), a snapshot captures the included paths per
+  policy (exclusions, large-file / DVC-pointer rules) **before** your `argv`
+  starts. That is the strongest guarantee: “this is the code and local files
+  the process could see at launch.”
+- **How the run was launched:** exact `argv` and `cwd`.
+- **Coarse environment:** Python version, platform, lockfile fingerprint, and
+  configured package versions—not a bitwise copy of `site-packages`.
+- **Data lineage where DVC is used:** linkage from existing `.dvc` /
+  `dvc.yaml`—you still own remotes and pulls.
+- **MLflow association** when available, for cross-checking metrics and
+  artifacts in the tracking store.
+
+**What we explicitly do not guarantee:**
+
+- **Bit-identical reruns** of stochastic training (same seed ≠ same weights
+  across GPUs, drivers, cuDNN settings, workers, etc.).
+- **Files created only after** the snapshot step (e.g. checkpoints written mid-
+  run, downloads during the run). Those are out of the pre-run archive unless
+  you add a separate capture strategy later (e.g. DVC outputs, MLflow artifacts,
+  post-run scan).
+- **Reads outside the work-tree** or paths excluded by policy.
+- **Hardware equivalence** or per-file verification of vendored / compiled
+  dependencies beyond version metadata.
+
+If you need stronger parity for **outputs**, treat them as first-class artifacts
+(DVC `outs`, MLflow logged files, or a future post-run snapshot pass)—not as
+something implied by the pre-run snapshot alone.
 
 ## Migrating from `ailine run`
 

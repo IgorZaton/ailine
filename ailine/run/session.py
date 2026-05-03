@@ -26,27 +26,32 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 import git
 import mlflow
+from mlflow.tracking import MlflowClient
 
 from ailine.config import constants
 from ailine.config.defaults import CommitType
 from ailine.config.validate import ValidatedConfig
 from ailine.fingerprint.env import collect_environment_fingerprint
 from ailine.linkage.dvc import build_dvc_linkage
+from ailine.naming.petname import default_record_name, validate_record_name
 from ailine.persistence import repository
 from ailine.persistence.repository import RunRecord
 from ailine.snapshot.archive import create_snapshot
 from ailine.snapshot.manifest import build_manifest
 from ailine.snapshot.paths import normalize_rel_path
 from ailine.snapshot.scan import resolve_large_file_decisions, scan_repo_files
+
+_AUTO_MLFLOW_NAME_RE = re.compile(r"^[a-z0-9]+-[a-z0-9]+(?:-[a-z0-9]+)?$")
 
 
 class SessionError(Exception):
@@ -92,6 +97,7 @@ class TrackResult:
     record: Optional[RunRecord] = None
     snapshot_path: Optional[str] = None
     mlflow_run_id: Optional[str] = None
+    record_name: Optional[str] = None
 
 
 def _maybe_origin_url(repo: git.Repo) -> Optional[str]:
@@ -171,7 +177,11 @@ def _maybe_set_mlflow_env(track_mlflow_cfg: dict) -> Optional[dict]:
 
 
 def _execute_child(
-    argv: Sequence[str], cwd: str, env: Optional[dict], mlflow_mode: str, run_name: str
+    argv: Sequence[str],
+    cwd: str,
+    env: Optional[dict],
+    mlflow_mode: str,
+    run_name: str,
 ) -> tuple[int, Optional[str]]:
     """Run the user command. Returns (exit_code, mlflow_run_id_or_None)."""
     if mlflow_mode == "wrap":
@@ -236,6 +246,70 @@ def _best_effort_mlflow_run_after_inherit_child(
     return None
 
 
+def _resolve_tracked_labels(record_name: Optional[str], run_name: Optional[str]) -> tuple[str, str]:
+    """Return ``(record_label, mlflow_wrap_run_name)``.
+
+    For traceability, the lineage DB name and MLflow ``run_name`` (wrap mode)
+    use the same string unless the user sets both ``--name`` and ``--run-name``
+    to different values.
+
+    * Neither flag: random ``adjective-animal`` for both.
+    * ``--name`` only: validated label for both.
+    * ``--run-name`` only: same string for both (validated for DB storage).
+    * Both: DB uses ``--name``; MLflow wrap uses ``--run-name`` verbatim.
+    """
+    rec_in = (record_name or "").strip()
+    run_in = (run_name or "").strip()
+
+    try:
+        if rec_in and run_in:
+            return validate_record_name(rec_in), run_in
+        if rec_in:
+            label = validate_record_name(rec_in)
+            return label, label
+        if run_in:
+            label = validate_record_name(run_in)
+            return label, label
+        label = default_record_name()
+        return label, label
+    except ValueError as exc:
+        raise SessionError(str(exc)) from exc
+
+
+def _is_probably_auto_mlflow_name(current_name: Optional[str], run_id: str) -> bool:
+    """Heuristic for conservative inherit-mode sync."""
+    if current_name is None:
+        return True
+    name = str(current_name).strip()
+    if not name:
+        return True
+    if name == run_id:
+        return True
+    if name.lower().startswith("run-") and run_id.startswith(name[4:]):
+        return True
+    return bool(_AUTO_MLFLOW_NAME_RE.fullmatch(name))
+
+
+def _maybe_sync_inherit_mlflow_name(run_id: Optional[str], target_name: str, policy: str) -> None:
+    """Best-effort post-hoc run-name alignment for ``track.mlflow.mode=inherit``."""
+    if not run_id or not str(run_id).strip():
+        return
+    if policy == "off":
+        return
+    rid = str(run_id).strip()
+    try:
+        mlflow.set_tracking_uri(constants.MLFLOW_TRACKING_URI)
+        client = MlflowClient()
+        run = client.get_run(rid)
+        tags = getattr(run.data, "tags", None) or {}
+        current_name = tags.get("mlflow.runName")
+        should_sync = policy == "force" or _is_probably_auto_mlflow_name(current_name, rid)
+        if should_sync and current_name != target_name:
+            client.set_tag(rid, "mlflow.runName", target_name)
+    except Exception as exc:
+        logging.debug("Skipping inherit MLflow name sync for %s: %s", rid, exc)
+
+
 def run_tracked_command(
     *,
     git_root: str,
@@ -244,6 +318,8 @@ def run_tracked_command(
     config: ValidatedConfig,
     git_url_hint: Optional[str] = None,
     run_name: Optional[str] = None,
+    record_name: Optional[str] = None,
+    on_resolved_labels: Optional[Callable[[str, str], None]] = None,
 ) -> TrackResult:
     """Execute one tracked run and persist a :class:`RunRecord`.
 
@@ -254,13 +330,25 @@ def run_tracked_command(
     storage: snapshot storage directory.
     config: validated ``.ailine.yml`` bundle.
     git_url_hint: optional pre-resolved remote URL (e.g. from `init` config).
-    run_name: optional MLflow run name when ``track.mlflow.mode == 'wrap'``.
+    run_name: optional MLflow ``run_name`` when ``track.mlflow.mode == 'wrap'``.
+        If omitted, uses the same string as ``record_name`` (see ``record_name``).
+    record_name: optional lineage DB label; default is random ``adjective-animal``.
+        When ``run_name`` is omitted, MLflow wrap mode uses this label too.
+        If both are set, ``record_name`` is stored in the DB and ``run_name`` is
+        passed to MLflow only.
+    on_resolved_labels: optional callback ``(record_label, mlflow_wrap_name)``
+        invoked once immediately after names are resolved (before snapshots /
+        subprocess). Used by the CLI to print a preview line.
     """
     if not argv:
         raise SessionError("argv must contain at least one element")
     if not os.path.isdir(git_root):
         raise SessionError(f"git_root does not exist: {git_root}")
     _guard_child_argv0(git_root, argv)
+
+    record_label, mlflow_wrap_name = _resolve_tracked_labels(record_name, run_name)
+    if on_resolved_labels is not None:
+        on_resolved_labels(record_label, mlflow_wrap_name)
 
     repo = git.Repo(git_root)
     head_sha = repo.head.commit.hexsha
@@ -269,7 +357,8 @@ def run_tracked_command(
     if snap:
         commit_id = snap["snapshot_hash"]
         commit_type = CommitType.SNAPSHOT
-        parent = head_sha[:7]
+        # Full parent SHA for unambiguous git worktree / restore (UI may shorten for display).
+        parent = head_sha
     else:
         commit_id = head_sha
         commit_type = CommitType.GIT
@@ -299,18 +388,23 @@ def run_tracked_command(
 
     track_mlflow = config.track["mlflow"]
     child_env = _maybe_set_mlflow_env(track_mlflow)
-    effective_run_name = run_name or f"exp_{commit_id[:8]}"
     since_utc = datetime.now(timezone.utc)
     exit_code, mlflow_run_id = _execute_child(
         argv=argv,
         cwd=git_root,
         env=child_env,
         mlflow_mode=track_mlflow["mode"],
-        run_name=effective_run_name,
+        run_name=mlflow_wrap_name,
     )
     until_utc = datetime.now(timezone.utc)
     if track_mlflow["mode"] == "inherit" and not mlflow_run_id:
         mlflow_run_id = _best_effort_mlflow_run_after_inherit_child(since_utc, until_utc)
+    if track_mlflow["mode"] == "inherit":
+        _maybe_sync_inherit_mlflow_name(
+            mlflow_run_id,
+            record_label,
+            str(track_mlflow.get("inherit_name_sync", "auto")),
+        )
 
     git_url = git_url_hint or _maybe_origin_url(repo)
 
@@ -338,6 +432,7 @@ def run_tracked_command(
             json.dumps(run_command_payload, sort_keys=True) if run_command_payload else None
         ),
         run_command_summary=run_command_summary,
+        record_name=record_label,
     )
     repository.insert_run(record)
 
@@ -348,4 +443,5 @@ def run_tracked_command(
         record=record,
         snapshot_path=record.snapshot_path,
         mlflow_run_id=mlflow_run_id,
+        record_name=record_label,
     )

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_tree.html" import render_tree %}
 {% from "_diff.html" import render_diff, render_diff_sections %}
-{% block title %}Snapshot {{ snapshot_id[:8] }}…{% endblock %}
+{% block title %}Snapshot {{ snapshot_id }}{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/styles/github.min.css">
@@ -10,10 +10,10 @@
 {% block content %}
 <div class="ailine-detail-wrap">
     <div class="ailine-page-head">
-        <h1 class="ailine-page-title">Snapshot <span class="ailine-hash" title="{{ snapshot_id }}">{{ snapshot_id }}</span></h1>
+        <h1 class="ailine-page-title">Snapshot <span class="ailine-hash ailine-hash--full" title="{{ snapshot_id }}">{{ snapshot_id }}</span></h1>
         <p class="ailine-page-lead">Captured workspace slice for this run. Compare against the parent commit on the Diff tab.</p>
         <div class="ailine-meta-row">
-            {% if parent %}<span class="ailine-chip">Parent <code class="ailine-hash ailine-hash--sm" title="{{ parent }}">{{ parent }}</code></span>{% endif %}
+            {% if parent %}<span class="ailine-chip">Parent <code class="ailine-hash ailine-hash--full" title="{{ parent }}">{{ parent }}</code></span>{% endif %}
             {% if parent_url %}<a href="{{ parent_url }}" class="btn btn-sm btn-primary" target="_blank" rel="noopener">Parent on Git host</a>{% endif %}
             <span class="ailine-chip">{{ paths|length }} archived file{{ '' if paths|length == 1 else 's' }}</span>
             {% if selected_path %}<span class="ailine-chip">Selected <code class="ailine-truncate d-inline-block" style="max-width:min(28ch,28vw)" title="{{ selected_path }}">{{ selected_path }}</code></span>{% endif %}

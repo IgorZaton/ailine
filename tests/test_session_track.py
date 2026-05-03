@@ -53,7 +53,7 @@ class TrackedCommandTests(unittest.TestCase):
         conn = sqlite3.connect(constants.DB_PATH)
         try:
             rows = conn.execute(
-                "SELECT id, type, run_command_summary, run_command_json "
+                "SELECT id, type, run_command_summary, run_command_json, record_name "
                 "FROM tree"
             ).fetchall()
         finally:
@@ -72,12 +72,28 @@ class TrackedCommandTests(unittest.TestCase):
 
         rows = self._read_run_rows()
         self.assertEqual(len(rows), 1)
-        rid, rtype, summary, payload_json = rows[0]
+        rid, rtype, summary, payload_json, name = rows[0]
         self.assertEqual(rtype, "git")
         self.assertIn("print('ok')", summary)
+        self.assertIsNotNone(name)
+        self.assertRegex(name, r"^[a-z0-9]+-[a-z0-9]+$")
+        self.assertEqual(name, result.record_name)
         payload = json.loads(payload_json)
         self.assertEqual(payload["argv"][:2], [sys.executable, "-c"])
         self.assertEqual(payload["cwd"], self.repo)
+
+    def test_custom_record_name(self):
+        result = run_tracked_command(
+            git_root=self.repo,
+            argv=[sys.executable, "-c", "print(2)"],
+            storage=self.storage,
+            config=self.config,
+            record_name="exp-baseline-A",
+        )
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(result.record_name, "exp-baseline-A")
+        rows = self._read_run_rows()
+        self.assertEqual(rows[0][4], "exp-baseline-A")
 
     def test_dirty_tree_creates_snapshot(self):
         with open(os.path.join(self.repo, "new_file.txt"), "w") as f:
@@ -119,6 +135,68 @@ class TrackedCommandTests(unittest.TestCase):
         mock_lookup.assert_called_once()
         self.assertEqual(result.mlflow_run_id, "post-hoc-run-id")
 
+    def test_inherit_auto_syncs_probably_auto_mlflow_name(self):
+        cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["mode"] = "inherit"
+        cfg.track["mlflow"]["inherit_name_sync"] = "auto"
+        with patch(
+            "ailine.run.session._best_effort_mlflow_run_after_inherit_child",
+            return_value="post-hoc-run-id",
+        ), patch("ailine.run.session.MlflowClient") as client_cls:
+            client = client_cls.return_value
+            client.get_run.return_value.data.tags = {"mlflow.runName": "calm-panda"}
+            result = run_tracked_command(
+                git_root=self.repo,
+                argv=[sys.executable, "-c", "print(1)"],
+                storage=self.storage,
+                config=cfg,
+                record_name="aligned-name",
+            )
+        self.assertEqual(result.mlflow_run_id, "post-hoc-run-id")
+        client.set_tag.assert_called_once_with(
+            "post-hoc-run-id", "mlflow.runName", "aligned-name"
+        )
+
+    def test_inherit_auto_does_not_override_custom_mlflow_name(self):
+        cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["mode"] = "inherit"
+        cfg.track["mlflow"]["inherit_name_sync"] = "auto"
+        with patch(
+            "ailine.run.session._best_effort_mlflow_run_after_inherit_child",
+            return_value="post-hoc-run-id",
+        ), patch("ailine.run.session.MlflowClient") as client_cls:
+            client = client_cls.return_value
+            client.get_run.return_value.data.tags = {"mlflow.runName": "train_dummy"}
+            run_tracked_command(
+                git_root=self.repo,
+                argv=[sys.executable, "-c", "print(1)"],
+                storage=self.storage,
+                config=cfg,
+                record_name="aligned-name",
+            )
+        client.set_tag.assert_not_called()
+
+    def test_inherit_force_always_syncs_mlflow_name(self):
+        cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["mode"] = "inherit"
+        cfg.track["mlflow"]["inherit_name_sync"] = "force"
+        with patch(
+            "ailine.run.session._best_effort_mlflow_run_after_inherit_child",
+            return_value="post-hoc-run-id",
+        ), patch("ailine.run.session.MlflowClient") as client_cls:
+            client = client_cls.return_value
+            client.get_run.return_value.data.tags = {"mlflow.runName": "train_dummy"}
+            run_tracked_command(
+                git_root=self.repo,
+                argv=[sys.executable, "-c", "print(1)"],
+                storage=self.storage,
+                config=cfg,
+                record_name="aligned-name",
+            )
+        client.set_tag.assert_called_once_with(
+            "post-hoc-run-id", "mlflow.runName", "aligned-name"
+        )
+
     def test_wrap_mode_opens_outer_mlflow_run(self):
         cfg = validate_config(self.cfg_path)
         cfg.track["mlflow"]["mode"] = "wrap"
@@ -138,6 +216,50 @@ class TrackedCommandTests(unittest.TestCase):
                 )
             start_run.assert_called_once()
             self.assertEqual(result.mlflow_run_id, "run-123")
+            self.assertEqual(start_run.call_args.kwargs["run_name"], result.record_name)
+
+    def test_run_name_only_used_for_db_and_mlflow_wrap(self):
+        cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["mode"] = "wrap"
+        with patch("ailine.run.session.mlflow.start_run") as start_run:
+            ctx = start_run.return_value
+            ctx.__enter__.return_value = None
+            ctx.__exit__.return_value = False
+            with patch("ailine.run.session.mlflow.active_run") as active_run:
+                active_run.return_value.info.run_id = "run-z"
+                result = run_tracked_command(
+                    git_root=self.repo,
+                    argv=[sys.executable, "-c", "print(1)"],
+                    storage=self.storage,
+                    config=cfg,
+                    run_name="only-cli-run",
+                )
+        self.assertEqual(result.record_name, "only-cli-run")
+        self.assertEqual(start_run.call_args.kwargs["run_name"], "only-cli-run")
+        rows = self._read_run_rows()
+        self.assertEqual(rows[0][4], "only-cli-run")
+
+    def test_wrap_mode_split_name_and_run_name(self):
+        cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["mode"] = "wrap"
+        with patch("ailine.run.session.mlflow.start_run") as start_run:
+            ctx = start_run.return_value
+            ctx.__enter__.return_value = None
+            ctx.__exit__.return_value = False
+            with patch("ailine.run.session.mlflow.active_run") as active_run:
+                active_run.return_value.info.run_id = "run-id"
+                result = run_tracked_command(
+                    git_root=self.repo,
+                    argv=[sys.executable, "-c", "print(1)"],
+                    storage=self.storage,
+                    config=cfg,
+                    record_name="db-nice",
+                    run_name="mlflow-metric",
+                )
+        self.assertEqual(result.record_name, "db-nice")
+        self.assertEqual(start_run.call_args.kwargs["run_name"], "mlflow-metric")
+        rows = self._read_run_rows()
+        self.assertEqual(rows[0][4], "db-nice")
 
     def test_dvc_verify_strict_aborts_on_failing_command(self):
         cfg = validate_config(self.cfg_path)

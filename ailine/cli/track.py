@@ -48,10 +48,25 @@ from ailine.run.session import SessionError, run_tracked_command
 @click.option(
     "--run-name",
     default=None,
-    help="MLflow run name when track.mlflow.mode == 'wrap'.",
+    help=(
+        "MLflow run name when track.mlflow.mode == 'wrap'. If set without --name, "
+        "the same value is stored as the lineage record name (aligned traceability). "
+        "If both --name and --run-name are set, --name is the DB label and --run-name "
+        "is used only for MLflow."
+    ),
+)
+@click.option(
+    "--name",
+    "record_label",
+    default=None,
+    help=(
+        "Human-readable name for this run (status table, web UI, and MLflow run name "
+        "in wrap mode unless --run-name overrides MLflow). "
+        "Default: random adjective-animal from fixed word lists."
+    ),
 )
 @click.argument("argv", nargs=-1, type=click.UNPROCESSED, required=True)
-def track_command(storage: str, config_path: str, run_name: str, argv: tuple):
+def track_command(storage: str, config_path: str, run_name: str, record_label, argv: tuple):
     if not argv:
         raise click.UsageError("Provide a command to run after '--'.")
 
@@ -74,7 +89,16 @@ def track_command(storage: str, config_path: str, run_name: str, argv: tuple):
     except FileNotFoundError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    click.echo(f"ailine track: repo={git_root} cmd={' '.join(argv)}", err=True)
+    def _preview_labels(rec: str, mlf: str) -> None:
+        mode = config.track["mlflow"]["mode"]
+        cmd = " ".join(argv)
+        if mode == "wrap":
+            click.echo(
+                f"ailine track: repo={git_root} name={rec!r} mlflow_run_name={mlf!r} cmd={cmd}",
+                err=True,
+            )
+        else:
+            click.echo(f"ailine track: repo={git_root} name={rec!r} cmd={cmd}", err=True)
 
     try:
         result = run_tracked_command(
@@ -84,13 +108,15 @@ def track_command(storage: str, config_path: str, run_name: str, argv: tuple):
             config=config,
             git_url_hint=origin_url(git_root),
             run_name=run_name,
+            record_name=record_label,
+            on_resolved_labels=_preview_labels,
         )
     except SessionError as exc:
         raise click.ClickException(str(exc)) from exc
 
     click.echo(
-        f"ailine track: recorded {result.commit_type}={result.commit_id} "
-        f"exit={result.exit_code}",
+        f"ailine track: recorded name={result.record_name!r} "
+        f"{result.commit_type}={result.commit_id} exit={result.exit_code}",
         err=True,
     )
     sys.exit(result.exit_code)

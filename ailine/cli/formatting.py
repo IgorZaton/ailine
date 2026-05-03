@@ -16,6 +16,7 @@ def print_formatted_data(data):
         print("-" * 20)
 
         print(f"{'ID':<15}: {item['id']}")
+        print(f"{'Name':<15}: {item.get('record_name') or 'None'}")
         print(f"{'Type':<15}: {item['type']}")
         print(f"{'Parent':<15}: {item['parent'] or 'None'}")
         print(f"{'MLflow Run':<15}: {item['mlflow_run']}")
@@ -58,22 +59,28 @@ def print_formatted_data(data):
 
 
 def print_table(data):
+    """Compact listing with **full** record id and parent on dedicated lines (copy/paste friendly)."""
     print("\nCommits and Snapshots:")
     print("-" * 84)
     print(
-        f"{'#':<3} {'Type':<10} {'ID':<20} {'Version':<20} {'DVC':<12} {'Env':<10} "
-        f"{'Cmd':<18} {'Paths':<6} {'Timestamp':<16}"
+        f"{'#':<3} {'Type':<10} {'DVC':<12} {'Env':<10} {'DvcRev':<20} "
+        f"{'Cmd':<20} {'Paths':<6} {'Timestamp':<16}"
     )
     print("-" * 84)
 
     for idx, item in enumerate(data, 1):
         print(
-            f"{idx:<3} {item['type']:<10} {item['id'][:8]:<20} {item['dvc_version']:<20} "
+            f"{idx:<3} {item['type']:<10} "
             f"{item.get('dvc_linkage_status', 'missing'):<12} "
             f"{item.get('env_fingerprint_status', 'missing'):<10} "
-            f"{(item.get('run_command_summary') or 'None')[:18]:<18} "
+            f"{(item['dvc_version'] or '-'):<20} "
+            f"{(item.get('run_command_summary') or 'None')[:20]:<20} "
             f"{item.get('dvc_linkage_count', 0):<6} "
             f"{format_timestamp(item['timestamp']):<16}"
         )
+        print(f"     record_id: {item['id']}")
+        print(f"     name:      {item.get('record_name') or '-'}")
+        print(f"     parent:    {item['parent'] if item.get('parent') else '-'}")
+        print()
 
     print("-" * 84)
