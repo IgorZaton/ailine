@@ -1,6 +1,8 @@
 [tool.poetry]
 name = "ailine"
-version = "0.1.0"
+# Placeholder; the real value is computed at build time from the latest git tag
+# by poetry-dynamic-versioning. See [tool.poetry-dynamic-versioning] below.
+version = "0.0.0"
 description = "ML experiment lineage tracker with snapshot-based reproducibility."
 authors = ["Igor Zaton"]
 readme = "README.md"
@@ -20,9 +22,19 @@ dvc = "^3.67.1"
 click = "^8.1.7"
 gitpython = "^3.1.43"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+
 [tool.poetry.scripts]
 ailine = "ailine.cli.main:main"
 
+[tool.poetry-dynamic-versioning]
+enable = true
+vcs = "git"
+style = "pep440"
+# Accepts v0.2.0 and PEP 440 pre-releases such as v0.2.0rc1 / v0.2.0a1 / v0.2.0b2.
+pattern = "^v(?P<base>\\d+\\.\\d+\\.\\d+)(?:(?P<stage>[a-z]+)(?P<revision>\\d+))?$"
+
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.5", "poetry-dynamic-versioning>=1.4"]
+build-backend = "poetry_dynamic_versioning.backend"
