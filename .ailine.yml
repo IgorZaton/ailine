@@ -1,3 +1,16 @@
+project:
+  version: 1
+  mode: track          # track | demo
+
+track:
+  repo_root: auto       # 'auto' walks parents for .git; or absolute path
+  mlflow:
+    mode: inherit       # inherit | wrap | none
+    set_env: false
+  dvc:
+    verify: "off"       # off | warn | strict
+    verify_commands: []
+
 snapshot:
   exclude_globs:
     - ".git/**"
@@ -14,20 +27,17 @@ snapshot:
   large_file_mode: prompt
   dvc_pointer_patterns:
     - "*.dvc"
+
 dvc:
-  mode: local_or_remote
-  scope: all_dvc_tracked
   remote_name:
-  auto_pull_missing: true
   require_hash_fields: true
-  status_verbose_limit: 10
   ignore_paths: []
+
 environment:
   enabled: true
   packages:
     - mlflow
-    - flask
-    - gitpython
     - dvc
+
 run_capture:
   enabled: true

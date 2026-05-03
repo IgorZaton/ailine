@@ -54,17 +54,28 @@ def create_snapshot(
     storage_dir: str,
     diff_text: str,
     untracked_files: List[str],
+    repo_path: str = None,
+    write_meta_file: bool = True,
 ) -> dict:
+    """Build a snapshot bundle on disk.
+
+    ``repo_path`` defaults to :data:`constants.REPO_DIR` for backward compat
+    with ``ailine run`` (demo flow). Pass an explicit path (e.g. resolved git
+    root) when called from ``ailine track``. ``write_meta_file=False`` skips
+    writing the demo-only ``.meta.yaml`` placeholder into the user's tree.
+    """
     manifest_json = json.dumps(manifest_entries, sort_keys=True, separators=(",", ":"))
     snapshot_hash = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
     snapshot_dir = os.path.abspath(storage_dir)
     snapshot_base = os.path.join(snapshot_dir, snapshot_hash)
     os.makedirs(snapshot_dir, exist_ok=True)
 
+    repo_root = repo_path or constants.REPO_DIR
     original_dir = os.getcwd()
-    os.chdir(constants.REPO_DIR)
+    os.chdir(repo_root)
     try:
-        create_snapshot_metafile(snapshot_hash, parent_commit_hash)
+        if write_meta_file:
+            create_snapshot_metafile(snapshot_hash, parent_commit_hash)
         snapshot_path = create_tar_zst_archive(snapshot_base, os.getcwd(), archive_entries)
     finally:
         os.chdir(original_dir)

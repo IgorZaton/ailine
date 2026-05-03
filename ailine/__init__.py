@@ -35,15 +35,12 @@ from ailine.config.defaults import (  # noqa: F401
     DEFAULT_ENVIRONMENT_CONFIG,
     DEFAULT_RUN_CAPTURE_CONFIG,
     DEFAULT_SNAPSHOT_POLICY,
-    VALID_DVC_MODES,
-    VALID_DVC_SCOPES,
 )
 from ailine.fingerprint.env import collect_environment_fingerprint  # noqa: F401
 from ailine.linkage.dvc import (  # noqa: F401
     build_dvc_linkage,
     discover_dvc_outputs,
     get_dvc_remote_info,
-    materialize_dvc_linkage,
 )
 from ailine.persistence.db import init_db  # noqa: F401
 from ailine.run.capture import build_run_command_payload  # noqa: F401
