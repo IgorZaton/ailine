@@ -27,7 +27,7 @@
 <div class="code-diff-stack">
     {% for sec in sections %}
     <article class="code-diff-file">
-        <header class="code-diff-file__header"><span class="code-diff-file__title">{{ sec.title }}</span></header>
+        <header class="code-diff-file__header"><span class="code-diff-file__title" title="{{ sec.title }}">{{ sec.title }}</span></header>
         <div class="code-diff-file__blob">
             {{ render_diff_body(sec.body) }}
         </div>

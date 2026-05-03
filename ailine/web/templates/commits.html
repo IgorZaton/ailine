@@ -1,33 +1,66 @@
 {% extends "base.html" %}
 {% block title %}Commits{% endblock %}
 {% block content %}
-    <h1 class="mt-4">Commits</h1>
-    <table class="table table-striped">
+<div class="ailine-page-head">
+    <h1 class="ailine-page-title">Commits &amp; snapshots</h1>
+    <p class="ailine-page-lead">Recorded experiment anchors in your workspace. Open a row to browse files or diffs.</p>
+</div>
+
+<div class="table-responsive ailine-table-card">
+    <table class="table table-hover ailine-table mb-0">
         <thead>
             <tr>
-                <th>ID</th>
-                <th>Type</th>
-                <th>Run ID</th>
-                <th>Dataset</th>
-                <th>Timestamp</th>
+                <th scope="col">ID</th>
+                <th scope="col">Type</th>
+                <th scope="col">Run ID</th>
+                <th scope="col">Dataset</th>
+                <th scope="col">When</th>
             </tr>
         </thead>
         <tbody>
         {% for entry in tree %}
             <tr>
-                <td>
+                <td class="ailine-cell-mono">
                     {% if entry.type == "git" %}
-                        <a href="/commit/{{ entry.id }}">{{ entry.id }}</a>
+                        <a href="/commit/{{ entry.id }}" title="{{ entry.id }}"><span class="ailine-hash">{{ entry.id }}</span></a>
                     {% elif entry.type == "snapshot" %}
-                        <a href="/snapshot/{{ entry.id }}">{{ entry.id }}</a>
+                        <a href="/snapshot/{{ entry.id }}" title="{{ entry.id }}"><span class="ailine-hash">{{ entry.id }}</span></a>
+                    {% else %}
+                        <span class="ailine-hash" title="{{ entry.id }}">{{ entry.id }}</span>
                     {% endif %}
                 </td>
-                <td>{{ entry.type }}</td>
-                <td>{{ entry.mlflow_run }}</td>
-                <td>{{ entry.dvc_version }}</td>
-                <td>{{ entry.timestamp }}</td>
+                <td>
+                    {% if entry.type == "git" %}
+                        <span class="badge rounded-pill text-bg-secondary ailine-badge-type">Git</span>
+                    {% elif entry.type == "snapshot" %}
+                        <span class="badge rounded-pill text-bg-primary ailine-badge-type">Snapshot</span>
+                    {% else %}
+                        <span class="badge rounded-pill text-bg-light border ailine-badge-type">{{ entry.type }}</span>
+                    {% endif %}
+                </td>
+                <td class="ailine-cell-mono">
+                    {% if entry.mlflow_run %}
+                        <span class="ailine-hash ailine-hash--md" title="{{ entry.mlflow_run }}">{{ entry.mlflow_run }}</span>
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if entry.dvc_version %}
+                        <span class="ailine-hash ailine-hash--md d-inline-block align-bottom" title="{{ entry.dvc_version }}">{{ entry.dvc_version }}</span>
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td class="text-muted small text-nowrap">{{ entry.timestamp }}</td>
             </tr>
         {% endfor %}
+        {% if not tree %}
+            <tr class="ailine-empty-row">
+                <td colspan="5">No commits yet. Run <code class="px-1">ailine run</code> to record one.</td>
+            </tr>
+        {% endif %}
         </tbody>
     </table>
+</div>
 {% endblock %}

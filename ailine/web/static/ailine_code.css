@@ -101,7 +101,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 16px;
+    gap: 12px;
+    padding: 10px 16px;
     background: var(--ailine-bg-muted);
     border-bottom: 1px solid var(--ailine-border);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -109,9 +110,22 @@
     color: var(--ailine-text);
 }
 
+.code-blob__path {
+    flex: 1;
+    min-width: 0;
+}
+
+.code-blob__path code {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .code-blob__truncated {
-    color: var(--ailine-diff-del-fg);
+    color: #b45309;
     font-size: 12px;
+    flex-shrink: 0;
 }
 
 .code-blob__body {
@@ -131,36 +145,43 @@
 }
 
 .code-empty {
-    padding: 48px 24px;
+    padding: 3rem 1.5rem;
     text-align: center;
     color: var(--ailine-text-muted);
-    font-size: 14px;
+    font-size: 0.95rem;
+    line-height: 1.6;
 }
 
 .code-tabs {
     display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--ailine-border);
-    margin-top: 16px;
+    gap: 4px;
+    padding: 4px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    background: #eef2f7;
+    border: 1px solid var(--ailine-border);
+    border-radius: 8px;
 }
 
 .code-tabs__item {
-    padding: 8px 16px;
+    padding: 8px 18px;
     text-decoration: none;
     color: var(--ailine-text-muted);
-    border-bottom: 2px solid transparent;
-    font-size: 14px;
+    border-radius: 6px;
+    font-size: 0.9rem;
     font-weight: 500;
 }
 
 .code-tabs__item:hover {
     color: var(--ailine-accent);
+    background: rgba(255, 255, 255, 0.7);
     text-decoration: none;
 }
 
 .code-tabs__item--active {
     color: var(--ailine-text);
-    border-bottom-color: var(--ailine-accent);
+    background: var(--ailine-bg);
+    box-shadow: 0 1px 2px rgba(31, 35, 40, 0.08);
 }
 
 .code-diff-stack {
@@ -187,9 +208,12 @@
 }
 
 .code-diff-file__title {
+    display: block;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     color: var(--ailine-text);
-    word-break: break-all;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .code-diff-file__blob {
@@ -246,20 +270,3 @@
     font-weight: 600;
 }
 
-.code-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: center;
-    color: var(--ailine-text-muted);
-    font-size: 13px;
-    margin: 4px 0 12px;
-}
-
-.code-meta code {
-    background: var(--ailine-bg-muted);
-    border: 1px solid var(--ailine-border);
-    border-radius: 4px;
-    padding: 2px 6px;
-    color: var(--ailine-text);
-}

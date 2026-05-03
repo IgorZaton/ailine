@@ -1,50 +1,60 @@
 {% extends "base.html" %}
 {% block title %}Experiments{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h1>Experiments</h1>
-    <div class="table-responsive">
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>Run ID</th>
-                    <th>Accuracy</th>
-                    <th>Commit</th>
-                    <th>Snapshot</th>
-                    <th>Dataset</th>
-                    <th>Timestamp</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for run in runs %}
-                <tr>
-                    <td><a href="{{ run.mlflow_url }}" target="_blank">{{ run.run_id }}</a></td>
-                    <td>{{ run.accuracy }}</td>
-                    <td>
-                        {% if run.commit %}
-                        <a href="{{ url_for('commit_view', commit_id=run.commit) }}">{{ run.commit }}</a>
-                        {% else %}
-                        N/A
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if run.snapshot %}
-                        <a href="{{ url_for('snapshot_view', snapshot_id=run.snapshot) }}">{{ run.snapshot }}</a>
-                        {% else %}
-                        N/A
-                        {% endif %}
-                    </td>
-                    <td>{{ run.dataset }}</td>
-                    <td>{{ run.timestamp }}</td>
-                </tr>
-                {% endfor %}
-                {% if not runs %}
-                <tr>
-                    <td colspan="6">No experiments found</td>
-                </tr>
-                {% endif %}
-            </tbody>
-        </table>
-    </div>
+<div class="ailine-page-head">
+    <h1 class="ailine-page-title">Experiments</h1>
+    <p class="ailine-page-lead">MLflow runs linked from this workspace. Run IDs open in the MLflow UI; commit and snapshot IDs open in AIline.</p>
+</div>
+
+<div class="table-responsive ailine-table-card">
+    <table class="table table-hover ailine-table mb-0">
+        <thead>
+            <tr>
+                <th scope="col">Run</th>
+                <th scope="col">Accuracy</th>
+                <th scope="col">Commit</th>
+                <th scope="col">Snapshot</th>
+                <th scope="col">Dataset</th>
+                <th scope="col">When</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in runs %}
+            <tr>
+                <td class="ailine-cell-mono">
+                    <a href="{{ run.mlflow_url }}" target="_blank" rel="noopener" title="{{ run.run_id }}"><span class="ailine-hash">{{ run.run_id }}</span></a>
+                </td>
+                <td>{{ run.accuracy }}</td>
+                <td class="ailine-cell-mono">
+                    {% if run.commit %}
+                    <a href="{{ url_for('commit_view', commit_id=run.commit) }}" title="{{ run.commit }}"><span class="ailine-hash ailine-hash--sm">{{ run.commit }}</span></a>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td class="ailine-cell-mono">
+                    {% if run.snapshot %}
+                    <a href="{{ url_for('snapshot_view', snapshot_id=run.snapshot) }}" title="{{ run.snapshot }}"><span class="ailine-hash">{{ run.snapshot }}</span></a>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if run.dataset and run.dataset != 'N/A' %}
+                    <span class="ailine-hash ailine-hash--md d-inline-block align-bottom" title="{{ run.dataset }}">{{ run.dataset }}</span>
+                    {% else %}
+                    {{ run.dataset }}
+                    {% endif %}
+                </td>
+                <td class="text-muted small">{{ run.timestamp }}</td>
+            </tr>
+            {% endfor %}
+            {% if not runs %}
+            <tr class="ailine-empty-row">
+                <td colspan="6">No experiments found. Run training via <code class="px-1">ailine run</code> first.</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
 </div>
 {% endblock %}

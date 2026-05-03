@@ -1,38 +1,43 @@
 {% extends "base.html" %}
 {% from "_tree.html" import render_tree %}
-{% block title %}Commit {{ commit_id }}{% endblock %}
+{% block title %}Commit {{ commit_id[:8] }}…{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/styles/github.min.css">
 {% endblock %}
 
 {% block content %}
-<h1 class="mt-4">Commit <code>{{ commit_id }}</code></h1>
-<div class="code-meta">
-    <a href="{{ git_url }}" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">View on Git platform</a>
-    <span>{{ paths|length }} file{{ '' if paths|length == 1 else 's' }}</span>
-    {% if selected_path %}<span>Selected: <code>{{ selected_path }}</code></span>{% endif %}
-</div>
+<div class="ailine-detail-wrap">
+    <div class="ailine-page-head">
+        <h1 class="ailine-page-title">Commit <span class="ailine-hash" title="{{ commit_id }}">{{ commit_id }}</span></h1>
+        <p class="ailine-page-lead">Browse this revision read-only. Paths use safe links; pick a file on the left.</p>
+        <div class="ailine-meta-row">
+            <a href="{{ git_url }}" class="btn btn-sm btn-primary" target="_blank" rel="noopener">Open on Git host</a>
+            <span class="ailine-chip">{{ paths|length }} file{{ '' if paths|length == 1 else 's' }}</span>
+            {% if selected_path %}<span class="ailine-chip">Selected <code class="ailine-truncate d-inline-block" style="max-width:min(28ch,28vw)" title="{{ selected_path }}">{{ selected_path }}</code></span>{% endif %}
+        </div>
+    </div>
 
-<div class="code-browser">
-    <aside class="code-browser__sidebar">
-        {% if paths %}
-            {{ render_tree(tree, selected_path, 'commit_view', {'commit_id': commit_id}) }}
-        {% else %}
-            <div class="code-empty">No files in this commit.</div>
-        {% endif %}
-    </aside>
-    <section class="code-browser__main">
-        {% if blob %}
-            <div class="code-blob__header">
-                <span><code>{{ blob.path }}</code></span>
-                {% if blob.truncated %}<span class="code-blob__truncated">Truncated to first 512 KiB</span>{% endif %}
-            </div>
-            <pre class="code-blob__body"><code{% if blob.language %} class="language-{{ blob.language }}"{% endif %}>{{ blob.content }}</code></pre>
-        {% else %}
-            <div class="code-empty">Select a file from the tree to view its contents.</div>
-        {% endif %}
-    </section>
+    <div class="code-browser">
+        <aside class="code-browser__sidebar" aria-label="File tree">
+            {% if paths %}
+                {{ render_tree(tree, selected_path, 'commit_view', {'commit_id': commit_id}) }}
+            {% else %}
+                <div class="code-empty">No files in this commit.</div>
+            {% endif %}
+        </aside>
+        <section class="code-browser__main" aria-label="File contents">
+            {% if blob %}
+                <div class="code-blob__header">
+                    <div class="code-blob__path"><code title="{{ blob.path }}">{{ blob.path }}</code></div>
+                    {% if blob.truncated %}<span class="code-blob__truncated text-nowrap">512 KiB limit — truncated</span>{% endif %}
+                </div>
+                <pre class="code-blob__body"><code{% if blob.language %} class="language-{{ blob.language }}"{% endif %}>{{ blob.content }}</code></pre>
+            {% else %}
+                <div class="code-empty">Choose a file from the tree to view its contents.</div>
+            {% endif %}
+        </section>
+    </div>
 </div>
 {% endblock %}
 
