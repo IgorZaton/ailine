@@ -72,7 +72,6 @@ class ObjectsV1ViewTests(unittest.TestCase):
                 {
                     "format": "objects-v1",
                     "objects_dir": os.path.join(self.storage, "objects"),
-                    "archive_path": None,
                 },
                 f,
             )
@@ -104,28 +103,18 @@ class ObjectsV1ViewTests(unittest.TestCase):
         constants.DB_PATH = self.old_db_path
 
     @patch("ailine.web.routes.snapshot_view.render_template")
-    def test_index_builds_tree_without_extracting(self, mock_render):
+    def test_index_builds_tree(self, mock_render):
         mock_render.return_value = "ok"
-        with patch(
-            "ailine.web.routes.snapshot_view.extract_tar_zst_archive"
-        ) as mock_extract:
-            response = self.client.get(f"/snapshot/{self.snap_id}")
-            self.assertEqual(response.status_code, 200)
-            mock_extract.assert_not_called()
+        response = self.client.get(f"/snapshot/{self.snap_id}")
+        self.assertEqual(response.status_code, 200)
         _, kwargs = mock_render.call_args
         self.assertEqual(kwargs["paths"], ["blob.bin", "notes/readme.md", "train.py"])
 
     @patch("ailine.web.routes.snapshot_view.render_template")
     def test_blob_read_via_object_store(self, mock_render):
         mock_render.return_value = "ok"
-        with patch(
-            "ailine.web.routes.snapshot_view.extract_tar_zst_archive"
-        ) as mock_extract:
-            response = self.client.get(
-                f"/snapshot/{self.snap_id}?path=train.py"
-            )
-            self.assertEqual(response.status_code, 200)
-            mock_extract.assert_not_called()
+        response = self.client.get(f"/snapshot/{self.snap_id}?path=train.py")
+        self.assertEqual(response.status_code, 200)
         _, kwargs = mock_render.call_args
         self.assertEqual(kwargs["blob"]["path"], "train.py")
         self.assertIn("print", kwargs["blob"]["content"])
@@ -134,40 +123,54 @@ class ObjectsV1ViewTests(unittest.TestCase):
     @patch("ailine.web.routes.snapshot_view.render_template")
     def test_binary_blob_returns_unreadable_marker(self, mock_render):
         mock_render.return_value = "ok"
-        with patch(
-            "ailine.web.routes.snapshot_view.extract_tar_zst_archive"
-        ) as mock_extract:
-            response = self.client.get(
-                f"/snapshot/{self.snap_id}?path=blob.bin"
-            )
-            self.assertEqual(response.status_code, 200)
-            mock_extract.assert_not_called()
+        response = self.client.get(f"/snapshot/{self.snap_id}?path=blob.bin")
+        self.assertEqual(response.status_code, 200)
         _, kwargs = mock_render.call_args
         self.assertIn("Binary or unreadable", kwargs["blob"]["content"])
 
     @patch("ailine.web.routes.snapshot_view.render_template")
     def test_unknown_path_rejected(self, mock_render):
         mock_render.return_value = "ok"
-        with patch(
-            "ailine.web.routes.snapshot_view.extract_tar_zst_archive"
-        ) as mock_extract:
-            response = self.client.get(
-                f"/snapshot/{self.snap_id}?path=missing.py"
-            )
-            self.assertEqual(response.status_code, 404)
-            mock_extract.assert_not_called()
+        response = self.client.get(f"/snapshot/{self.snap_id}?path=missing.py")
+        self.assertEqual(response.status_code, 404)
 
     @patch("ailine.web.routes.snapshot_view.render_template")
     def test_path_traversal_rejected(self, mock_render):
         mock_render.return_value = "ok"
-        with patch(
-            "ailine.web.routes.snapshot_view.extract_tar_zst_archive"
-        ) as mock_extract:
-            response = self.client.get(
-                f"/snapshot/{self.snap_id}?path=../etc/passwd"
-            )
-            self.assertEqual(response.status_code, 404)
-            mock_extract.assert_not_called()
+        response = self.client.get(f"/snapshot/{self.snap_id}?path=../etc/passwd")
+        self.assertEqual(response.status_code, 404)
+
+    def test_legacy_row_returns_410_with_prune_hint(self):
+        # Insert a row whose metadata sibling has no ``format`` field.
+        legacy_id = "legacy1"
+        legacy_manifest = os.path.join(self.storage, f"{legacy_id}.manifest.json")
+        with open(legacy_manifest, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        legacy_meta = os.path.join(self.storage, f"{legacy_id}.metadata.json")
+        with open(legacy_meta, "w", encoding="utf-8") as f:
+            json.dump({"snapshot_id": legacy_id}, f)
+        conn = sqlite3.connect(constants.DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO tree (id, type, parent, snapshot_path, manifest_path, diff_path, "
+            "timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                legacy_id,
+                "snapshot",
+                "parentX",
+                None,
+                legacy_manifest,
+                None,
+                "2026-05-04T07:00:00",
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        response = self.client.get(f"/snapshot/{legacy_id}")
+        self.assertEqual(response.status_code, 410)
+        body = response.get_data(as_text=True)
+        self.assertIn("prune-legacy-snapshots", body)
 
 
 if __name__ == "__main__":

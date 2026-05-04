@@ -9,7 +9,7 @@ Flow:
 
 1. Resolve git state (HEAD sha, dirty?) at ``git_root``.
 2. If dirty: scan, resolve large-file decisions, build manifest, create
-   snapshot bundle (tar.zst + manifest + diff + metadata).
+   snapshot bundle (manifest + diff + metadata + content-addressed objects).
 3. Optionally run ``track.dvc.verify_commands`` (controlled by ``track.dvc.verify``).
 4. Build DVC linkage, environment fingerprint, run-command payload from the
    real argv.

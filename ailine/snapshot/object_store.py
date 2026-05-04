@@ -2,8 +2,8 @@
 
 A snapshot's manifest already carries a ``sha256`` for every included file,
 so we reuse that hash as the object key. Objects live under
-``<storage_dir>/objects/<sha[:2]>/<sha>.zst`` and are compressed with the
-same ``zstandard`` settings used for legacy ``tar.zst`` archives.
+``<storage_dir>/objects/<sha[:2]>/<sha>.zst`` and are compressed with
+``zstandard``.
 
 This module is intentionally tiny (SRP): it owns
 on-disk placement and atomic write semantics — nothing more. Higher-level

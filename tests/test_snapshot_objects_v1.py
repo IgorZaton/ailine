@@ -83,8 +83,8 @@ class ObjectsV1SnapshotTests(unittest.TestCase):
         with open(metadata_files[0], "r", encoding="utf-8") as f:
             meta = json.load(f)
         self.assertEqual(meta["format"], SNAPSHOT_FORMAT_OBJECTS_V1)
-        self.assertIsNone(meta["archive_path"])
-        self.assertIsNone(meta["archive_sha256"])
+        self.assertNotIn("archive_path", meta)
+        self.assertNotIn("archive_sha256", meta)
         self.assertEqual(
             os.path.abspath(meta["objects_dir"]),
             os.path.abspath(os.path.join(self.storage, "objects")),

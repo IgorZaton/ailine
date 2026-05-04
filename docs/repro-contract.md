@@ -37,7 +37,10 @@ When prompted for a large non-DVC file, user decisions are persisted in `.ailine
 
 ## Storage and deduplication guarantees
 
-- Snapshot archive format is `tar.zst`.
+- Snapshots use the `objects-v1` layout: every included file is written once
+  to a content-addressed object store at
+  `<storage>/objects/<sha[:2]>/<sha>.zst` keyed by the manifest entry's
+  `sha256`. Snapshots that share a file share the underlying object on disk.
 - Snapshot ID is computed from manifest content hash.
 - Accepted large non-DVC files are stored once in a content-addressed object store under `.ailine/objects/`.
 - Snapshot manifests store pointer references to these objects instead of duplicating payloads every run.

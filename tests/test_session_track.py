@@ -107,7 +107,7 @@ class TrackedCommandTests(unittest.TestCase):
             config=self.config,
         )
         self.assertEqual(result.commit_type, "snapshot")
-        # objects-v1 snapshots intentionally do not produce a tar.zst payload.
+        # objects-v1 snapshots intentionally do not produce a per-snapshot payload.
         self.assertIsNone(result.snapshot_path)
 
         snap_id = result.commit_id
@@ -121,7 +121,7 @@ class TrackedCommandTests(unittest.TestCase):
         with open(metadata_file, "r", encoding="utf-8") as f:
             meta = json.load(f)
         self.assertEqual(meta["format"], "objects-v1")
-        self.assertIsNone(meta["archive_path"])
+        self.assertNotIn("archive_path", meta)
 
         objects_root = os.path.join(self.storage, "objects")
         self.assertTrue(os.path.isdir(objects_root))
