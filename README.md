@@ -27,6 +27,18 @@ ailine track -- python train.py --epochs 5          # run + record
 ailine status --verbose                             # see what was captured
 ```
 
+### Try a pre-release from TestPyPI
+
+```bash
+pip install \
+  --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple \
+  ailine
+```
+
+The `--extra-index-url` keeps regular dependencies (mlflow, dvc, ...) flowing
+from real PyPI; only `ailine` itself is fetched from TestPyPI.
+
 `ailine track --` is the primary, no-magic interface. It snapshots dirty
 state, records DVC linkage + environment fingerprint + the exact argv, runs
 your command in the repo root, and propagates the exit code. Your training
