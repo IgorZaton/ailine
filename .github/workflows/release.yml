@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build sdist + wheel and publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (with full history so the tag is visible)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install "poetry==1.8.*"
+
+      - name: Install poetry-dynamic-versioning plugin
+        run: poetry self add "poetry-dynamic-versioning[plugin]"
+
+      - name: Install project (with dev deps)
+        run: poetry install --with dev --no-interaction
+
+      - name: Run tests
+        run: poetry run pytest -q
+
+      - name: Build sdist and wheel
+        run: poetry build
+
+      - name: Show built artifacts
+        run: ls -la dist/
+
+      - name: Publish GitHub Release with artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}

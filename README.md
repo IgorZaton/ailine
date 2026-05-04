@@ -117,3 +117,38 @@ ailine/
   snapshot/        # repo scan, manifest, tar.zst archive
   web/             # Flask app factory + route modules + templates
 ```
+
+## Releasing
+
+The package version is derived from the latest git tag via
+[`poetry-dynamic-versioning`](https://github.com/mtkennerly/poetry-dynamic-versioning).
+There is no manual `version = ...` bump in `pyproject.toml`; the tag *is* the
+version.
+
+One-time, on each developer machine:
+
+```bash
+poetry self add "poetry-dynamic-versioning[plugin]"
+```
+
+Local dry-run before tagging (runs tests, builds sdist + wheel, smoke-tests the
+wheel in a throwaway venv):
+
+```bash
+bash scripts/release-check.sh
+```
+
+Cut a release:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Pushing a `v*.*.*` tag triggers
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which runs the
+test suite, calls `poetry build`, and publishes a GitHub Release with the
+`dist/*.tar.gz` and `dist/*.whl` attached and auto-generated notes.
+
+Pre-releases follow PEP 440 (matched by the configured tag pattern):
+`v0.2.0a1`, `v0.2.0b2`, `v0.2.0rc1`.
