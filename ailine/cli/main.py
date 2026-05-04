@@ -11,8 +11,6 @@ import mlflow
 from ailine.cli.doctor import doctor_command
 from ailine.cli.formatting import print_formatted_data, print_table
 from ailine.cli.init import (
-    deprecated_cleanup_command,
-    deprecated_init_command,
     init_demo_command,
     init_workspace_command,
     reset_demo_command,
@@ -157,8 +155,6 @@ def serve():
 cli.add_command(init_workspace_command)
 cli.add_command(init_demo_command)
 cli.add_command(reset_demo_command)
-cli.add_command(deprecated_init_command)
-cli.add_command(deprecated_cleanup_command)
 cli.add_command(track_command)
 cli.add_command(doctor_command)
 cli.add_command(prune_legacy_snapshots_command)

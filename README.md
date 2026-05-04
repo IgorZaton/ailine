@@ -57,7 +57,6 @@ ailine reset-demo                   # remove ./repo, DB, mlruns/
 | `ailine init-demo <repo_url>` | Clone a sample repo into `./repo` and persist the URL in `ailine_config.txt` (tutorial flow). |
 | `ailine run --script <s> [--dataset <d>] [--dvc-add] [--name NAME]` | Demo wrapper around `track` that hard-codes `./repo` and forces `mlflow.mode=wrap`. |
 | `ailine reset-demo` | Delete demo artifacts (`./repo`, DB, `mlruns/`, default snapshot dir, `temp_*`). |
-| `ailine init` / `ailine cleanup` | Deprecated aliases for `init-demo` / `reset-demo`. |
 
 By default MLflow writes runs to a **local file store** under `./mlruns` (no
 tracking server required). Override with `AILINE_MLFLOW_URI` if you use a remote
