@@ -172,6 +172,11 @@ def _validate_snapshot(raw: Dict[str, Any]) -> Dict[str, Any]:
         raise ConfigValidationError(
             "snapshot.dvc_pointer_patterns must be a list of glob strings."
         )
+    storage_dir = cfg.get("storage_dir")
+    if storage_dir is not None and not isinstance(storage_dir, str):
+        raise ConfigValidationError(
+            "snapshot.storage_dir must be a string path or null."
+        )
     return cfg
 
 

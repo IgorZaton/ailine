@@ -50,11 +50,11 @@ ailine reset-demo                   # remove ./repo, DB, mlruns/
 |---------|---------|
 | `ailine init-workspace [--force]` | Bootstrap the pip-install workflow: write a default `.ailine.yml` and ensure state directories. No clone. |
 | `ailine doctor [--json] [--strict] [--config PATH]` | Validate `.ailine.yml` and the local environment. The single source of truth for "is my setup OK". |
-| `ailine track [--storage DIR] [--config PATH] [--run-name NAME] -- <argv...>` | Run a command under AIline tracking. The argv after `--` is executed verbatim from the repo root. |
+| `ailine track [--config PATH] [--run-name NAME] [--name NAME] -- <argv...>` | Run a command under AIline tracking. The argv after `--` is executed verbatim from the repo root. Snapshot location is configured via `snapshot.storage_dir` in `.ailine.yml` (or `AILINE_STORAGE_DIR`). |
 | `ailine status [--verbose]` | List recorded runs: default output includes **full** `record_id` and `parent` lines (copy/paste for restore); `--verbose` dumps all fields. Errors clearly when the DB does not exist yet. |
 | `ailine serve` | Start the MLflow UI subprocess and the Flask app together (ports 5001 and 5000). |
 | `ailine init-demo <repo_url>` | Clone a sample repo into `./repo` and persist the URL in `ailine_config.txt` (tutorial flow). |
-| `ailine run --script <s> [--dataset <d>] [--dvc-add] [--storage DIR]` | Demo wrapper around `track` that hard-codes `./repo` and forces `mlflow.mode=wrap`. |
+| `ailine run --script <s> [--dataset <d>] [--dvc-add] [--name NAME]` | Demo wrapper around `track` that hard-codes `./repo` and forces `mlflow.mode=wrap`. |
 | `ailine reset-demo` | Delete demo artifacts (`./repo`, DB, `mlruns/`, default snapshot dir, `temp_*`). |
 | `ailine init` / `ailine cleanup` | Deprecated aliases for `init-demo` / `reset-demo`. |
 

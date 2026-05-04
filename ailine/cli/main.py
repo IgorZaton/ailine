@@ -23,6 +23,7 @@ from ailine.config.validate import ConfigValidationError, validate_config
 from ailine.persistence import repository
 from ailine.persistence.db import init_db
 from ailine.run.session import SessionError, run_tracked_command
+from ailine.snapshot.storage import resolve_storage_dir
 from ailine.web.state import get_repo_url, load_repo_url
 
 
@@ -67,12 +68,6 @@ def status(verbose):
     help="Dataset path inside ./repo. Only used when --dvc-add is set.",
 )
 @click.option(
-    "--storage",
-    default=constants.DEFAULT_STORAGE_DIR,
-    show_default=True,
-    help="Snapshot storage directory.",
-)
-@click.option(
     "--dvc-add/--no-dvc-add",
     "dvc_add",
     default=False,
@@ -89,7 +84,7 @@ def status(verbose):
     default=None,
     help="Human-readable name for this run (default: random adjective-animal).",
 )
-def run(script, dataset, storage, dvc_add, record_label):
+def run(script, dataset, dvc_add, record_label):
     repo_url = get_repo_url()
     if not repo_url:
         raise click.UsageError(
@@ -116,6 +111,7 @@ def run(script, dataset, storage, dvc_add, record_label):
     config.track["mlflow"]["mode"] = "wrap"
 
     git_root = os.path.abspath(constants.REPO_DIR)
+    storage = resolve_storage_dir(config.snapshot, git_root)
 
     def _preview_demo(rec: str, mlf: str) -> None:
         click.echo(

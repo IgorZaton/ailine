@@ -25,8 +25,10 @@ because `repo/train.py` is not an executable binary. Use
 1. Walks parent directories from cwd to find a Git work-tree (`.git`).
 2. Loads and validates `.ailine.yml` at the work-tree root.
 3. If your tree is dirty (uncommitted changes / untracked files), creates a
-   content-addressed snapshot (`tar.zst` + manifest + diff + metadata) under
-   the configured `--storage` directory.
+   content-addressed snapshot (manifest + diff + metadata + per-file objects)
+   under the storage directory configured by `snapshot.storage_dir` in
+   `.ailine.yml` (default: `<repo>/.ailine/snapshots`; overridable with the
+   `AILINE_STORAGE_DIR` environment variable).
 4. Captures DVC linkage, environment fingerprint, the exact argv, and your
    Git state into the SQLite tree.
 5. Runs `python train.py --epochs 5` (or whatever you put after `--`) as a
@@ -62,6 +64,8 @@ track:
     verify_commands: []     # e.g. [["dvc", "status", "--quiet"]]
 
 snapshot:
+  storage_dir: .ailine/snapshots   # relative paths resolved against the repo root;
+                                   # overridden by AILINE_STORAGE_DIR
   exclude_globs:            # gitignore-style globs, applied to repo files
     - ".git/**"
     - ".venv/**"

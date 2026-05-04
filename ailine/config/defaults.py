@@ -19,6 +19,10 @@ DEFAULT_SNAPSHOT_POLICY = {
     "large_file_mb": 50,
     "large_file_mode": "prompt",
     "dvc_pointer_patterns": ["*.dvc"],
+    # Where snapshot bundles + content-addressed objects live. ``None`` -> resolved at
+    # runtime via ``AILINE_STORAGE_DIR`` env or ``constants.DEFAULT_STORAGE_DIR``.
+    # Relative values are resolved against the repo root, not cwd.
+    "storage_dir": None,
 }
 
 DEFAULT_DVC_CONFIG = {
