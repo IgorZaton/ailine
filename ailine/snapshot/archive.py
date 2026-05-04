@@ -1,4 +1,15 @@
-"""tar.zst archive creation/extraction and on-disk snapshot bundle layout."""
+"""Snapshot bundle creation and (legacy) tar.zst archive helpers.
+
+Bundles use the **objects-v1** layout: each included file is written once
+to a content-addressed object store under
+``<storage_dir>/objects/<sha[:2]>/<sha>.zst`` and the manifest entries
+already carry the same ``sha256`` keys. Two snapshots that share a file
+share the underlying object on disk.
+
+The legacy ``create_tar_zst_archive`` / ``extract_tar_zst_archive`` helpers
+are intentionally preserved (LSP) so existing snapshots created before
+this format change keep rendering in the web UI without migration.
+"""
 
 import hashlib
 import json
@@ -13,7 +24,7 @@ import yaml
 import zstandard as zstd
 
 from ailine.config import constants
-from ailine.snapshot.paths import sha256_file
+from ailine.snapshot import object_store
 
 
 def create_snapshot_metafile(snapshot_hash: str, parent_commit_hash: str) -> None:
@@ -47,6 +58,31 @@ def extract_tar_zst_archive(archive_path: str, output_dir: str) -> None:
                 tar.extractall(output_dir)
 
 
+SNAPSHOT_FORMAT_OBJECTS_V1 = "objects-v1"
+
+
+def _write_objects(archive_entries: List[dict], storage_dir: str) -> dict:
+    """Persist included files as content-addressed objects.
+
+    Returns a small summary dict; ``object_bytes_total`` reflects the
+    *uncompressed* sum of stored file sizes (kept compatible with the
+    legacy ``archive_bytes`` field used elsewhere).
+    """
+    seen: set[str] = set()
+    object_bytes_total = 0
+    for entry in archive_entries:
+        sha = entry["sha256"]
+        full_path = entry["full_path"]
+        object_store.put_file(full_path, sha, storage_dir)
+        if sha not in seen:
+            seen.add(sha)
+            object_bytes_total += int(entry.get("size", os.path.getsize(full_path)))
+    return {
+        "object_count": len(seen),
+        "object_bytes_total": object_bytes_total,
+    }
+
+
 def create_snapshot(
     manifest_entries: List[dict],
     archive_entries: List[dict],
@@ -57,12 +93,20 @@ def create_snapshot(
     repo_path: str = None,
     write_meta_file: bool = True,
 ) -> dict:
-    """Build a snapshot bundle on disk.
+    """Build a snapshot bundle on disk in the ``objects-v1`` layout.
 
     ``repo_path`` defaults to :data:`constants.REPO_DIR` for backward compat
     with ``ailine run`` (demo flow). Pass an explicit path (e.g. resolved git
     root) when called from ``ailine track``. ``write_meta_file=False`` skips
     writing the demo-only ``.meta.yaml`` placeholder into the user's tree.
+
+    Side effects:
+        * Writes one zstd-compressed object per unique included file under
+          ``<storage_dir>/objects/<sha[:2]>/<sha>.zst`` (idempotent / shared
+          across snapshots).
+        * Writes ``<storage_dir>/<id>.manifest.json``,
+          ``<storage_dir>/<id>.metadata.json``, ``<storage_dir>/<id>.diff.patch``.
+        * Does NOT write a per-snapshot ``.tar.zst`` payload.
     """
     manifest_json = json.dumps(manifest_entries, sort_keys=True, separators=(",", ":"))
     snapshot_hash = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
@@ -76,17 +120,14 @@ def create_snapshot(
     try:
         if write_meta_file:
             create_snapshot_metafile(snapshot_hash, parent_commit_hash)
-        snapshot_path = create_tar_zst_archive(snapshot_base, os.getcwd(), archive_entries)
+        objects_summary = _write_objects(archive_entries, snapshot_dir)
     finally:
         os.chdir(original_dir)
-
-    if not os.path.exists(snapshot_path):
-        raise FileNotFoundError(f"Snapshot not created at {snapshot_path}")
 
     manifest_path = f"{snapshot_base}.manifest.json"
     metadata_path = f"{snapshot_base}.metadata.json"
     diff_path = f"{snapshot_base}.diff.patch"
-    archive_sha256 = sha256_file(snapshot_path)
+    objects_dir = os.path.join(snapshot_dir, "objects")
 
     with open(manifest_path, "w", encoding="utf-8") as manifest_file:
         json.dump(manifest_entries, manifest_file, indent=2, sort_keys=True)
@@ -97,9 +138,12 @@ def create_snapshot(
         "snapshot_id": snapshot_hash,
         "parent_commit": parent_commit_hash,
         "created_at": datetime.now().isoformat(),
-        "archive_path": snapshot_path,
-        "archive_sha256": archive_sha256,
-        "archive_bytes": os.path.getsize(snapshot_path),
+        "format": SNAPSHOT_FORMAT_OBJECTS_V1,
+        "objects_dir": objects_dir,
+        "object_count": objects_summary["object_count"],
+        "archive_path": None,
+        "archive_sha256": None,
+        "archive_bytes": objects_summary["object_bytes_total"],
         "manifest_path": manifest_path,
         "diff_path": diff_path,
         "untracked_files": untracked_files,
@@ -107,12 +151,17 @@ def create_snapshot(
     with open(metadata_path, "w", encoding="utf-8") as metadata_file:
         json.dump(metadata, metadata_file, indent=2, sort_keys=True)
 
-    logging.info(f"Snapshot created: {snapshot_path}")
+    logging.info(
+        "Snapshot created (objects-v1): id=%s objects=%d objects_dir=%s",
+        snapshot_hash,
+        objects_summary["object_count"],
+        objects_dir,
+    )
     return {
         "snapshot_hash": snapshot_hash,
-        "snapshot_path": snapshot_path,
+        "snapshot_path": None,
         "manifest_path": manifest_path,
         "metadata_path": metadata_path,
-        "archive_bytes": os.path.getsize(snapshot_path),
+        "archive_bytes": objects_summary["object_bytes_total"],
         "diff_path": diff_path,
     }
