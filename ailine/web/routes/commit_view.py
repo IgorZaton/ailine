@@ -79,6 +79,7 @@ def view(commit_id: str):
         return render_template(
             "commit.html",
             commit_id=commit_id,
+            resolved_commit_id=full_commit_id,
             git_url=git_url,
             tree=tree,
             paths=paths,

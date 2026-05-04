@@ -83,7 +83,13 @@ def status(verbose):
         "themselves and rely on 'ailine track --'."
     ),
 )
-def run(script, dataset, storage, dvc_add):
+@click.option(
+    "--name",
+    "record_label",
+    default=None,
+    help="Human-readable name for this run (default: random adjective-animal).",
+)
+def run(script, dataset, storage, dvc_add, record_label):
     repo_url = get_repo_url()
     if not repo_url:
         raise click.UsageError(
@@ -110,21 +116,32 @@ def run(script, dataset, storage, dvc_add):
     config.track["mlflow"]["mode"] = "wrap"
 
     git_root = os.path.abspath(constants.REPO_DIR)
+
+    def _preview_demo(rec: str, mlf: str) -> None:
+        click.echo(
+            f"ailine run: repo={git_root} name={rec!r} mlflow_run_name={mlf!r} script={script}",
+            err=True,
+        )
+
     try:
         result = run_tracked_command(
             git_root=git_root,
             argv=["python", script],
             storage=storage,
             config=config,
+            record_name=record_label,
+            on_resolved_labels=_preview_demo,
         )
     except SessionError as exc:
         raise click.ClickException(str(exc)) from exc
 
     logging.info(
-        f"Demo run logged: mlflow={result.mlflow_run_id} commit={result.commit_id}"
+        f"Demo run logged: name={result.record_name!r} mlflow={result.mlflow_run_id} "
+        f"commit={result.commit_id}"
     )
     click.echo(
-        f"Demo run logged: mlflow={result.mlflow_run_id} commit={result.commit_id}"
+        f"Demo run logged: name={result.record_name!r} mlflow={result.mlflow_run_id} "
+        f"commit={result.commit_id}"
     )
     sys.exit(result.exit_code)
 

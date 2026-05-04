@@ -59,6 +59,7 @@ DEFAULT_TRACK_CONFIG = {
     "mlflow": {
         "mode": "inherit",   # inherit | wrap | none
         "set_env": False,    # if true, ailine sets MLFLOW_TRACKING_URI before child
+        "inherit_name_sync": "auto",  # off | auto | force
     },
     "dvc": {
         "verify": "off",        # off | warn | strict
@@ -66,6 +67,7 @@ DEFAULT_TRACK_CONFIG = {
     },
 }
 VALID_MLFLOW_MODES = {"inherit", "wrap", "none"}
+VALID_MLFLOW_INHERIT_NAME_SYNC = {"off", "auto", "force"}
 VALID_DVC_VERIFY_LEVELS = {"off", "warn", "strict"}
 
 

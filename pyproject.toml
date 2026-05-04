@@ -10,6 +10,7 @@ packages = [{ include = "ailine" }]
 include = [
     { path = "ailine/web/templates/*.html", format = ["sdist", "wheel"] },
     { path = "ailine/web/static/*", format = ["sdist", "wheel"] },
+    { path = "ailine/naming/data/*.txt", format = ["sdist", "wheel"] },
 ]
 
 [tool.poetry.dependencies]

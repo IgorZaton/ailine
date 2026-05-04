@@ -22,6 +22,7 @@ _ADDITIVE_COLUMNS = {
     "env_fingerprint_status": "TEXT",
     "run_command_json": "TEXT",
     "run_command_summary": "TEXT",
+    "record_name": "TEXT",
 }
 
 

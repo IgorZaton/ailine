@@ -12,6 +12,7 @@
         <thead>
             <tr>
                 <th scope="col">Record</th>
+                <th scope="col">Name</th>
                 <th scope="col">Type</th>
                 <th scope="col">MLflow run</th>
                 <th scope="col">Git</th>
@@ -35,6 +36,13 @@
                     {% endif %}
                 </td>
                 <td>
+                    {% if entry.record_name %}
+                        <span title="{{ entry.record_name }}">{{ entry.record_name }}</span>
+                    {% else %}
+                        <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td>
                     {% if entry.type == "git" %}
                         <span class="badge rounded-pill text-bg-secondary ailine-badge-type">Git</span>
                     {% elif entry.type == "snapshot" %}
@@ -43,11 +51,21 @@
                         <span class="badge rounded-pill text-bg-light border ailine-badge-type">{{ entry.type }}</span>
                     {% endif %}
                 </td>
-                <td class="ailine-cell-mono">
-                    {% if entry.mlflow_run and entry.mlflow_url %}
-                        <a href="{{ entry.mlflow_url }}" target="_blank" rel="noopener" title="{{ entry.mlflow_run }} (open in MLflow UI)"><span class="ailine-hash ailine-hash--md">{{ entry.mlflow_run }}</span></a>
-                    {% elif entry.mlflow_run %}
-                        <span class="ailine-hash ailine-hash--md" title="{{ entry.mlflow_run }} (link unavailable)">{{ entry.mlflow_run }}</span>
+                <td>
+                    {% if entry.mlflow_run %}
+                        <div class="ailine-cell-mono">
+                            {% if entry.mlflow_url %}
+                                <a href="{{ entry.mlflow_url }}" target="_blank" rel="noopener" title="{{ entry.mlflow_run }} (open in MLflow UI)"><span class="ailine-hash ailine-hash--md">{{ entry.mlflow_run }}</span></a>
+                            {% else %}
+                                <span class="ailine-hash ailine-hash--md" title="{{ entry.mlflow_run }} (link unavailable)">{{ entry.mlflow_run }}</span>
+                            {% endif %}
+                        </div>
+                        {% if entry.mlflow_run_name %}
+                            <div class="small text-muted text-break" title="MLflow run name (tag mlflow.runName)">{{ entry.mlflow_run_name }}</div>
+                        {% endif %}
+                        {% if entry.record_name and entry.mlflow_run_name and entry.record_name != entry.mlflow_run_name %}
+                            <div class="small text-warning text-nowrap" title="AIline record name differs from MLflow run name">name mismatch</div>
+                        {% endif %}
                     {% else %}
                         <span class="text-muted">&mdash;</span>
                     {% endif %}
@@ -95,7 +113,7 @@
         {% endfor %}
         {% if not rows %}
             <tr class="ailine-empty-row">
-                <td colspan="9">No runs recorded yet. Use <code class="px-1">ailine track --</code> to record one.</td>
+                <td colspan="10">No runs recorded yet. Use <code class="px-1">ailine track --</code> to record one.</td>
             </tr>
         {% endif %}
         </tbody>
@@ -121,6 +139,7 @@
                 <thead>
                     <tr>
                         <th scope="col">Run</th>
+                        <th scope="col">MLflow name</th>
                         <th scope="col">Experiment</th>
                         <th scope="col">Start</th>
                         <th scope="col">Commit tag</th>
@@ -132,6 +151,7 @@
                 {% for run in orphans %}
                     <tr>
                         <td class="ailine-cell-mono"><span class="ailine-hash ailine-hash--md" title="{{ run.run_id }}">{{ run.run_id }}</span></td>
+                        <td class="small text-muted text-break">{% if run.mlflow_run_name %}{{ run.mlflow_run_name }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
                         <td class="ailine-cell-mono">{{ run.experiment_id or '—' }}</td>
                         <td class="text-muted small text-nowrap">{{ run.start_time or '—' }}</td>
                         <td class="ailine-cell-mono">
