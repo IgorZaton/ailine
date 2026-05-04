@@ -1,0 +1,11 @@
+.git/
+.dvc/cache/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+mlruns/
+.ailine/
+.cursor/

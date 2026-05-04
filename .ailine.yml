@@ -12,18 +12,6 @@ track:
     verify_commands: []
 
 snapshot:
-  exclude_globs:
-    - ".git/**"
-    - ".dvc/cache/**"
-    - ".venv/**"
-    - "__pycache__/**"
-    - "*.pyc"
-    - "*.pyo"
-    - ".pytest_cache/**"
-    - ".mypy_cache/**"
-    - "mlruns/**"
-    - ".ailine/**"
-    - ".cursor/**"
   large_file_mb: 50
   large_file_mode: prompt
   dvc_pointer_patterns:
