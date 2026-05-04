@@ -205,6 +205,37 @@ def fetch_snapshot_browser_row(
     }
 
 
+def fetch_snapshot_restore_row(
+    snapshot_id: str, db_path: Optional[str] = None
+) -> Optional[dict]:
+    """Fetch the minimal fields ``ailine restore`` needs to materialize a snapshot.
+
+    Returns ``None`` when the row does not exist or is not a snapshot row;
+    callers translate that to a user-facing fail-fast error.
+    """
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, type, parent, manifest_path, metadata_path, timestamp "
+            "FROM tree WHERE id = ?",
+            (snapshot_id,),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row or row[1] != "snapshot":
+        return None
+    return {
+        "id": row[0],
+        "type": row[1],
+        "parent": row[2],
+        "manifest_path": row[3],
+        "metadata_path": row[4],
+        "timestamp": row[5],
+    }
+
+
 def fetch_all_snapshot_locations(db_path: Optional[str] = None) -> List[dict]:
     """Return on-disk locations for every snapshot row.
 
