@@ -1,6 +1,6 @@
-# AIline
+<img src="ailine/web/static/icon.png" alt="AIline logo" width="240" />
 
-![AIline logo](ailine/web/static/icon.png)
+# AIline
 
 ML experiment lineage tracker with snapshot-based reproducibility.
 
