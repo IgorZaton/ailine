@@ -19,7 +19,7 @@ pip install -e .
 ## Quick start (your own project)
 
 ```bash
-pip install ailine                                  # or: poetry add --group dev ailine
+pip install ailine-lineage                          # or: poetry add --group dev ailine-lineage
 cd /path/to/your/repo
 ailine init-workspace                               # writes default .ailine.yml + .ailineignore
 ailine doctor                                       # green-light all checks
@@ -33,11 +33,11 @@ ailine status --verbose                             # see what was captured
 pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple \
-  ailine
+  ailine-lineage
 ```
 
 The `--extra-index-url` keeps regular dependencies (mlflow, dvc, ...) flowing
-from real PyPI; only `ailine` itself is fetched from TestPyPI.
+from real PyPI; only `ailine-lineage` itself is fetched from TestPyPI.
 
 `ailine track --` is the primary, no-magic interface. It snapshots dirty
 state, records DVC linkage + environment fingerprint + the exact argv, runs

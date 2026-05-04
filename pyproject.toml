@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "ailine"
+name = "ailine-lineage"
 # Placeholder; the real value is computed at build time from the latest git tag
 # by poetry-dynamic-versioning. See [tool.poetry-dynamic-versioning] below.
 version = "0.0.0"

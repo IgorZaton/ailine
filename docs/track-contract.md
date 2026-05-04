@@ -8,7 +8,7 @@ project, and how `.ailine.yml` configures the boundary.
 ## TL;DR
 
 ```bash
-pip install ailine
+pip install ailine-lineage
 cd /path/to/your/repo
 ailine init-workspace          # writes a default .ailine.yml (review it)
 ailine doctor                  # green-light all checks

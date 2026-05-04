@@ -91,7 +91,7 @@ jobs:
       - name: Wait for TestPyPI propagation
         run: sleep 30
 
-      - name: Install ailine from TestPyPI in a fresh venv
+      - name: Install ailine-lineage from TestPyPI in a fresh venv
         env:
           AILINE_VERSION: ${{ needs.build-and-release.outputs.version }}
         run: |
@@ -104,14 +104,14 @@ jobs:
             if pip install \
                 --index-url https://test.pypi.org/simple/ \
                 --extra-index-url https://pypi.org/simple \
-                "ailine==${AILINE_VERSION}"; then
+                "ailine-lineage==${AILINE_VERSION}"; then
               echo "Install succeeded on attempt ${attempt}"
               break
             fi
             echo "Install attempt ${attempt} failed; sleeping before retry"
             sleep 30
           done
-          pip show ailine
+          pip show ailine-lineage
 
       - name: Verify CLI entrypoints
         run: |
