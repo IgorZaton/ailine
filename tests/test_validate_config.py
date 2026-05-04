@@ -111,6 +111,16 @@ class ValidateConfigTests(unittest.TestCase):
             validate_config(path)
         self.assertIn("snapshot.storage_dir", str(ctx.exception))
 
+    def test_snapshot_exclude_globs_rejected_with_migration_message(self):
+        path = self._write(
+            "snapshot:\n  exclude_globs:\n    - .git/**\n"
+        )
+        with self.assertRaises(ConfigValidationError) as ctx:
+            validate_config(path)
+        msg = str(ctx.exception)
+        self.assertIn("exclude_globs", msg)
+        self.assertIn(".ailineignore", msg)
+
 
 if __name__ == "__main__":
     unittest.main()

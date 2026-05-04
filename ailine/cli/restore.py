@@ -23,6 +23,7 @@ from ailine.config.validate import ConfigValidationError, validate_config
 from ailine.integrations.git_root import resolve_git_root
 from ailine.persistence import repository
 from ailine.snapshot.archive import SNAPSHOT_FORMAT_OBJECTS_V1
+from ailine.snapshot.ignore import load_ignore_spec
 from ailine.snapshot.restore import (
     PROTECTED_DIR_NAMES,
     apply_restore,
@@ -142,12 +143,13 @@ def restore_command(
 
     manifest_entries = _load_manifest(row["manifest_path"])
 
+    ignore_spec = load_ignore_spec(git_root)
     try:
         plan = plan_restore(
             manifest_entries=manifest_entries,
             storage_dir=storage_dir,
             repo_root=git_root,
-            preserve_globs=list(config.snapshot.get("exclude_globs") or []),
+            preserve_spec=ignore_spec,
         )
     except ValueError as exc:
         raise click.ClickException(f"Snapshot manifest rejected: {exc}") from exc

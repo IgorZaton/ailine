@@ -25,8 +25,10 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import List
 
+import pathspec
+
 from ailine.snapshot import object_store
-from ailine.snapshot.paths import is_excluded
+from ailine.snapshot.ignore import is_ignored
 
 
 PROTECTED_DIR_NAMES = (".git", ".ailine")
@@ -120,7 +122,7 @@ def plan_restore(
     manifest_entries: list,
     storage_dir: str,
     repo_root: str,
-    preserve_globs: list[str] | None = None,
+    preserve_spec: pathspec.PathSpec | None = None,
 ) -> RestorePlan:
     """Compute the strict-sync restore plan for a snapshot manifest.
 
@@ -140,12 +142,14 @@ def plan_restore(
             plan.writes.append(entry)
 
     current_files = _walk_repo_files(repo_root, storage_dir)
-    preserve_globs = preserve_globs or []
-    plan.deletions = sorted(
-        p
-        for p in current_files
-        if p not in restore_paths and not is_excluded(p, preserve_globs)
-    )
+    if preserve_spec is None:
+        plan.deletions = sorted(p for p in current_files if p not in restore_paths)
+    else:
+        plan.deletions = sorted(
+            p
+            for p in current_files
+            if p not in restore_paths and not is_ignored(p, preserve_spec)
+        )
     plan.writes.sort(key=lambda e: e.rel_path)
     return plan
 

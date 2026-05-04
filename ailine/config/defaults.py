@@ -4,18 +4,6 @@ from enum import Enum
 
 
 DEFAULT_SNAPSHOT_POLICY = {
-    "exclude_globs": [
-        ".git/**",
-        ".dvc/cache/**",
-        ".venv/**",
-        "__pycache__/**",
-        "*.pyc",
-        "*.pyo",
-        ".pytest_cache/**",
-        ".mypy_cache/**",
-        "mlruns/**",
-        ".ailine/**",
-    ],
     "large_file_mb": 50,
     "large_file_mode": "prompt",
     "dvc_pointer_patterns": ["*.dvc"],

@@ -21,7 +21,7 @@ pip install -e .
 ```bash
 pip install ailine                                  # or: poetry add --group dev ailine
 cd /path/to/your/repo
-ailine init-workspace                               # writes a default .ailine.yml
+ailine init-workspace                               # writes default .ailine.yml + .ailineignore
 ailine doctor                                       # green-light all checks
 ailine track -- python train.py --epochs 5          # run + record
 ailine status --verbose                             # see what was captured
@@ -97,9 +97,11 @@ Run links only work if an MLflow UI is reachable at that base URL (for example
 `mlflow ui --backend-store-uri "$(pwd)/mlruns" --host 127.0.0.1 --port 5001`).
 
 Project-level behaviour lives in `.ailine.yml` at the repository root
-(snapshot exclusions, large-file policy, DVC linkage settings, environment
-fingerprint packages, run-capture toggle, plus the new `project:` and
-`track:` blocks for the `ailine track --` workflow).
+(large-file policy, DVC linkage settings, environment fingerprint packages,
+run-capture toggle, plus the `project:` and `track:` blocks for the
+`ailine track --` workflow). Snapshot ignore patterns are configured
+separately in `.ailineignore` (gitignore syntax) — see
+[docs/track-contract.md](docs/track-contract.md#ailineignore).
 
 - [docs/track-contract.md](docs/track-contract.md) — what `ailine track`
   guarantees and the full `.ailine.yml` schema.

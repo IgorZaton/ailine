@@ -25,6 +25,10 @@ import click
 
 from ailine.config import constants
 from ailine.config.loader import init_state_dirs
+from ailine.snapshot.ignore import (
+    AILINEIGNORE_FILENAME,
+    render_default_ailineignore,
+)
 from ailine.web.state import set_repo_url
 
 
@@ -48,17 +52,9 @@ snapshot:
   # values are resolved against the repo root. Default (when omitted): the
   # value of AILINE_STORAGE_DIR or ./.ailine/snapshots.
   storage_dir: .ailine/snapshots
-  exclude_globs:
-    - ".git/**"
-    - ".dvc/cache/**"
-    - ".venv/**"
-    - "__pycache__/**"
-    - "*.pyc"
-    - "*.pyo"
-    - ".pytest_cache/**"
-    - ".mypy_cache/**"
-    - "mlruns/**"
-    - ".ailine/**"
+  # Snapshot ignore patterns live in .ailineignore (gitignore syntax) at the
+  # repo root, not here. `ailine init-workspace` seeds it with sensible
+  # defaults; see docs/track-contract.md.
   large_file_mb: 50
   large_file_mode: prompt
   dvc_pointer_patterns:
@@ -80,11 +76,25 @@ run_capture:
 """
 
 
+def _write_default_ailineignore(target_path: str, *, force: bool) -> None:
+    """Idempotently seed ``target_path`` with the default ``.ailineignore`` content.
+
+    Creates the file when missing; preserves an existing one unless
+    ``force=True``. Echoes one line so users see what happened.
+    """
+    if os.path.exists(target_path) and not force:
+        click.echo(f"{target_path} already exists. Pass --force to overwrite.")
+        return
+    with open(target_path, "w", encoding="utf-8") as f:
+        f.write(render_default_ailineignore())
+    click.echo(f"Wrote {target_path}.")
+
+
 @click.command("init-workspace", help="Bootstrap a project for `ailine track --` (no clone).")
 @click.option(
     "--force",
     is_flag=True,
-    help="Overwrite an existing .ailine.yml if present.",
+    help="Overwrite an existing .ailine.yml or .ailineignore if present.",
 )
 def init_workspace_command(force: bool):
     target = constants.POLICY_PATH
@@ -95,9 +105,16 @@ def init_workspace_command(force: bool):
             f.write(WORKSPACE_TEMPLATE)
         click.echo(f"Wrote {target}.")
 
+    _write_default_ailineignore(
+        os.path.join(os.getcwd(), AILINEIGNORE_FILENAME), force=force
+    )
+
     init_state_dirs()
     click.echo(f"State directory: {constants.STATE_DIR}")
-    click.echo("Next: run 'ailine doctor' to verify, then 'ailine track -- <command>'.")
+    click.echo(
+        "Next: run 'ailine doctor' to verify, then 'ailine track -- <command>'. "
+        "Customize ignored paths in .ailineignore."
+    )
 
 
 @click.command("init-demo", help="Clone a sample repo into ./repo for the tutorial flow.")
@@ -111,6 +128,9 @@ def init_demo_command(repo_url: str):
     with open(constants.CONFIG_PATH, "w") as f:
         f.write(repo_url)
     subprocess.run(["git", "fetch"], check=True, cwd=constants.REPO_DIR)
+    _write_default_ailineignore(
+        os.path.join(constants.REPO_DIR, AILINEIGNORE_FILENAME), force=False
+    )
     set_repo_url(repo_url)
     logging.info(f"Initialized AIline demo with {repo_url} in {constants.REPO_DIR}")
     click.echo(f"Initialized AIline demo with {repo_url} in {constants.REPO_DIR}")

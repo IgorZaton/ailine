@@ -52,6 +52,12 @@ from ailine.snapshot.paths import (  # noqa: F401
     normalize_rel_path,
     sha256_file,
 )
+from ailine.snapshot.ignore import (  # noqa: F401
+    AILINEIGNORE_FILENAME,
+    DEFAULT_AILINEIGNORE_PATTERNS,
+    is_ignored,
+    load_ignore_spec,
+)
 from ailine.snapshot.scan import (  # noqa: F401
     create_large_file_pointer,
     discover_dvc_tracked_paths,

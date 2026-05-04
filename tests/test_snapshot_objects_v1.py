@@ -12,7 +12,6 @@ from ailine.snapshot.scan import resolve_large_file_decisions, scan_repo_files
 
 
 _SNAPSHOT_POLICY = {
-    "exclude_globs": [".git/**"],
     "large_file_mb": 10,
     "large_file_mode": "include",
     "dvc_pointer_patterns": ["*.dvc"],

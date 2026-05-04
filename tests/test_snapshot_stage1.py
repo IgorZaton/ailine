@@ -41,7 +41,6 @@ class SnapshotStage1Tests(unittest.TestCase):
     def test_manifest_snapshot_id_is_deterministic(self):
         self._write_file("train.py", b"print('x')\n")
         policy = {
-            "exclude_globs": [".git/**"],
             "large_file_mb": 10,
             "large_file_mode": "prompt",
             "dvc_pointer_patterns": ["*.dvc"],
@@ -55,7 +54,6 @@ class SnapshotStage1Tests(unittest.TestCase):
     def test_remembered_large_file_decision_auto_applies(self):
         self._write_file("big.bin", b"x" * 16)
         policy = {
-            "exclude_globs": [".git/**"],
             "large_file_mb": 0.000001,
             "large_file_mode": "prompt",
             "dvc_pointer_patterns": ["*.dvc"],
@@ -74,7 +72,6 @@ class SnapshotStage1Tests(unittest.TestCase):
     def test_large_file_pointer_is_deduplicated(self):
         self._write_file("big.bin", b"large-content")
         policy = {
-            "exclude_globs": [".git/**"],
             "large_file_mb": 0.000001,
             "large_file_mode": "prompt",
             "dvc_pointer_patterns": ["*.dvc"],
@@ -96,10 +93,11 @@ class SnapshotStage1Tests(unittest.TestCase):
         self.assertEqual(pointer_payload["path"], "big.bin")
 
     def test_excluded_cache_paths_not_tracked(self):
+        # `__pycache__/` is in DEFAULT_AILINEIGNORE_PATTERNS so the scan
+        # must skip it without any user .ailineignore present.
         self._write_file("__pycache__/module.cpython-312.pyc", b"compiled")
         self._write_file("train.py", b"print('ok')\n")
         policy = {
-            "exclude_globs": [".git/**", "__pycache__/**"],
             "large_file_mb": 10,
             "large_file_mode": "prompt",
             "dvc_pointer_patterns": ["*.dvc"],
