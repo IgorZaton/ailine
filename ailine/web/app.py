@@ -1,6 +1,7 @@
 """Flask application factory and a module-level ``app`` instance for back-compat."""
 
 import logging
+import os
 
 from flask import Flask
 
@@ -22,6 +23,9 @@ def create_app() -> Flask:
 
 def _bootstrap_logging() -> None:
     if not logging.getLogger().handlers:
+        log_dir = os.path.dirname(constants.LOG_PATH)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
         logging.basicConfig(
             filename=constants.LOG_PATH,
             level=logging.INFO,

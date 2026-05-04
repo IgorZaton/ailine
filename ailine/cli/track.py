@@ -21,6 +21,7 @@ from ailine.config.validate import (
     validate_config,
 )
 from ailine.integrations.git_root import origin_url, resolve_git_root
+from ailine.integrations.mlflow_links import resolve_mlflow_ui_url
 from ailine.run.session import SessionError, run_tracked_command
 from ailine.snapshot.storage import resolve_storage_dir
 
@@ -96,6 +97,24 @@ def track_command(config_path: str, run_name: str, record_label, argv: tuple):
         else:
             click.echo(f"ailine track: repo={git_root} name={rec!r} cmd={cmd}", err=True)
 
+    def _announce_run_started(record_id: str, mlflow_run_id) -> None:
+        click.echo(
+            f"ailine track: tracking record={record_id} status=in_progress",
+            err=True,
+        )
+        if mlflow_run_id:
+            url = resolve_mlflow_ui_url(mlflow_run_id)
+            if url:
+                click.echo(
+                    f"ailine track: MLflow run={mlflow_run_id} url={url}",
+                    err=True,
+                )
+            else:
+                click.echo(
+                    f"ailine track: MLflow run={mlflow_run_id}",
+                    err=True,
+                )
+
     try:
         result = run_tracked_command(
             git_root=git_root,
@@ -106,6 +125,7 @@ def track_command(config_path: str, run_name: str, record_label, argv: tuple):
             run_name=run_name,
             record_name=record_label,
             on_resolved_labels=_preview_labels,
+            on_run_started=_announce_run_started,
         )
     except SessionError as exc:
         raise click.ClickException(str(exc)) from exc

@@ -2,7 +2,11 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from ailine.config import constants
-from ailine.integrations.mlflow_links import get_mlflow_run_browser_context, run_detail_url
+from ailine.integrations.mlflow_links import (
+    get_mlflow_run_browser_context,
+    provisional_run_detail_url,
+    run_detail_url,
+)
 
 
 class MlflowUiLinkTests(unittest.TestCase):
@@ -26,6 +30,13 @@ class MlflowUiLinkTests(unittest.TestCase):
         url, name = get_mlflow_run_browser_context("rid-1")
         self.assertIn("#/experiments/7/runs/rid-1", url or "")
         self.assertEqual(name, "my-training-run")
+
+    @patch("ailine.integrations.mlflow_links.mlflow.get_run")
+    def test_browser_context_returns_provisional_url_when_lookup_fails(self, mock_get_run):
+        mock_get_run.side_effect = RuntimeError("mlflow backend lag")
+        url, name = get_mlflow_run_browser_context("rid-2")
+        self.assertEqual(url, provisional_run_detail_url("rid-2"))
+        self.assertIsNone(name)
 
 
 if __name__ == "__main__":

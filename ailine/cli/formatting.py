@@ -17,6 +17,8 @@ def print_formatted_data(data):
 
         print(f"{'ID':<15}: {item['id']}")
         print(f"{'Name':<15}: {item.get('record_name') or 'None'}")
+        print(f"{'Status':<15}: {(item.get('status') or 'done').upper()}")
+        print(f"{'Exit Code':<15}: {item.get('exit_code') if item.get('exit_code') is not None else '-'}")
         print(f"{'Type':<15}: {item['type']}")
         print(f"{'Parent':<15}: {item['parent'] or 'None'}")
         print(f"{'MLflow Run':<15}: {item['mlflow_run']}")
@@ -61,16 +63,17 @@ def print_formatted_data(data):
 def print_table(data):
     """Compact listing with **full** record id and parent on dedicated lines (copy/paste friendly)."""
     print("\nCommits and Snapshots:")
-    print("-" * 84)
+    print("-" * 96)
     print(
-        f"{'#':<3} {'Type':<10} {'DVC':<12} {'Env':<10} {'DvcRev':<20} "
+        f"{'#':<3} {'Status':<11} {'Type':<10} {'DVC':<12} {'Env':<10} {'DvcRev':<20} "
         f"{'Cmd':<20} {'Paths':<6} {'Timestamp':<16}"
     )
-    print("-" * 84)
+    print("-" * 96)
 
     for idx, item in enumerate(data, 1):
+        status_label = (item.get("status") or "done").upper()
         print(
-            f"{idx:<3} {item['type']:<10} "
+            f"{idx:<3} {status_label:<11} {item['type']:<10} "
             f"{item.get('dvc_linkage_status', 'missing'):<12} "
             f"{item.get('env_fingerprint_status', 'missing'):<10} "
             f"{(item['dvc_version'] or '-'):<20} "
@@ -81,6 +84,8 @@ def print_table(data):
         print(f"     record_id: {item['id']}")
         print(f"     name:      {item.get('record_name') or '-'}")
         print(f"     parent:    {item['parent'] if item.get('parent') else '-'}")
+        if item.get("exit_code") is not None:
+            print(f"     exit_code: {item['exit_code']}")
         print()
 
-    print("-" * 84)
+    print("-" * 96)

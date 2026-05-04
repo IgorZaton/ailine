@@ -134,6 +134,126 @@ class LineagePageTests(unittest.TestCase):
 
     @patch("ailine.web.routes.lineage.mlflow.search_runs")
     @patch("ailine.integrations.mlflow_links.mlflow.get_run")
+    def test_in_progress_row_promotes_matching_orphan_mlflow_run(
+        self, mock_get_run, mock_search_runs
+    ):
+        conn = sqlite3.connect(constants.DB_PATH)
+        try:
+            conn.execute(
+                "UPDATE tree SET status = ?, mlflow_run = NULL WHERE id = ?",
+                ("in_progress", "abc1234"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        def _get_run(rid):
+            if rid == "orphan-run-1":
+                return _FakeMlflowRun("9", {"mlflow.runName": "live-inherit-run"})
+            return _FakeMlflowRun("42", {"mlflow.runName": "linked-tag"})
+
+        mock_get_run.side_effect = _get_run
+        mock_search_runs.return_value = _make_runs_df(
+            [
+                {
+                    "run_id": "orphan-run-1",
+                    "experiment_id": "9",
+                    "start_time": "2026-05-03T00:00:01",
+                    "tags.commit": "abc1234",
+                    "tags.snapshot": None,
+                    "tags.mlflow.runName": "live-inherit-run",
+                }
+            ]
+        )
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode("utf-8")
+        # The run is now shown in the main lineage row rather than only under
+        # "Unlinked MLflow runs".
+        self.assertIn("live-inherit-run", body)
+        self.assertIn("orphan-run-1", body)
+        self.assertIn("Unlinked MLflow runs (0)", body)
+
+    @patch("ailine.web.routes.lineage.mlflow.search_runs")
+    @patch("ailine.integrations.mlflow_links.mlflow.get_run")
+    def test_in_progress_snapshot_row_matches_orphan_by_parent_commit_tag(
+        self, mock_get_run, mock_search_runs
+    ):
+        conn = sqlite3.connect(constants.DB_PATH)
+        try:
+            conn.execute(
+                "UPDATE tree SET type = ?, status = ?, parent = ?, mlflow_run = NULL WHERE id = ?",
+                ("snapshot", "in_progress", "git-parent-1", "abc1234"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        mock_get_run.return_value = _FakeMlflowRun(
+            experiment_id="9", tags={"mlflow.runName": "snapshot-live-run"}
+        )
+        mock_search_runs.return_value = _make_runs_df(
+            [
+                {
+                    "run_id": "orphan-run-snap",
+                    "experiment_id": "9",
+                    "start_time": "2026-05-03T00:00:02",
+                    "tags.commit": "git-parent-1",
+                    "tags.snapshot": None,
+                    "tags.mlflow.runName": "snapshot-live-run",
+                }
+            ]
+        )
+
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode("utf-8")
+        self.assertIn("snapshot-live-run", body)
+        self.assertIn("orphan-run-snap", body)
+        self.assertIn("Unlinked MLflow runs (0)", body)
+
+    @patch("ailine.web.routes.lineage.mlflow.search_runs")
+    @patch("ailine.integrations.mlflow_links.mlflow.get_run")
+    def test_single_orphan_fallback_binds_to_single_in_progress_row(
+        self, mock_get_run, mock_search_runs
+    ):
+        conn = sqlite3.connect(constants.DB_PATH)
+        try:
+            conn.execute(
+                "UPDATE tree SET status = ?, mlflow_run = NULL, parent = NULL WHERE id = ?",
+                ("in_progress", "abc1234"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        mock_get_run.return_value = _FakeMlflowRun(
+            experiment_id="9", tags={"mlflow.runName": "fallback-live-run"}
+        )
+        mock_search_runs.return_value = _make_runs_df(
+            [
+                {
+                    "run_id": "orphan-run-fallback",
+                    "experiment_id": "9",
+                    "start_time": "2026-05-03T00:00:03",
+                    "tags.commit": None,
+                    "tags.snapshot": None,
+                    "tags.mlflow.runName": "fallback-live-run",
+                }
+            ]
+        )
+
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode("utf-8")
+        self.assertIn("fallback-live-run", body)
+        self.assertIn("orphan-run-fallback", body)
+        self.assertIn("Unlinked MLflow runs (0)", body)
+
+    @patch("ailine.web.routes.lineage.mlflow.search_runs")
+    @patch("ailine.integrations.mlflow_links.mlflow.get_run")
     def test_unresolvable_mlflow_run_renders_id_without_link(
         self, mock_get_run, mock_search_runs
     ):
@@ -145,7 +265,7 @@ class LineagePageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.data.decode("utf-8")
         self.assertIn("linked-run-1", body)
-        self.assertNotIn("/#/experiments/", body)
+        self.assertIn("/#/experiments/0/runs/linked-run-1", body)
         self.assertIn("Unlinked MLflow runs (0)", body)
 
 

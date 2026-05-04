@@ -12,13 +12,21 @@ from typing import List, Optional
 from ailine.config import constants
 
 
+# Status enum constants; kept lower-case strings so existing rows (where the
+# column is NULL because they predate the lifecycle feature) are interpreted
+# as "done" by the UI without needing a backfill migration.
+RUN_STATUS_IN_PROGRESS = "in_progress"
+RUN_STATUS_DONE = "done"
+RUN_STATUS_FAILED = "failed"
+
+
 _INSERT_SQL = """INSERT OR REPLACE INTO tree
     (id, type, parent, mlflow_run, dvc_version, snapshot_path, timestamp, git_url,
      manifest_path, metadata_path, archive_bytes, included_file_count, excluded_file_count,
      large_file_pointer_count, diff_path, dvc_linkage_json, dvc_linkage_status,
      env_fingerprint_json, env_fingerprint_status, run_command_json, run_command_summary,
-     record_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+     record_name, status, started_at, finished_at, exit_code)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
 
 @dataclass
@@ -45,6 +53,10 @@ class RunRecord:
     run_command_json: Optional[str] = None
     run_command_summary: Optional[str] = None
     record_name: Optional[str] = None
+    status: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    exit_code: Optional[int] = None
 
     def as_row(self) -> tuple:
         return (
@@ -70,6 +82,10 @@ class RunRecord:
             self.run_command_json,
             self.run_command_summary,
             self.record_name,
+            self.status,
+            self.started_at,
+            self.finished_at,
+            self.exit_code,
         )
 
 
@@ -86,6 +102,97 @@ def insert_run(record: RunRecord, db_path: Optional[str] = None) -> None:
         conn.close()
 
 
+def insert_running_run(record: RunRecord, db_path: Optional[str] = None) -> None:
+    """Insert a row in ``in_progress`` state.
+
+    Forces ``status = "in_progress"`` and ensures ``started_at`` is set so the
+    UI/CLI can show the run as live the moment ``ailine track`` resolves the
+    record id but before the child process completes. Subsequent finalization
+    goes through :func:`complete_run` or :func:`fail_run`, which update only
+    the dynamic fields known after the subprocess exits.
+    """
+    record.status = RUN_STATUS_IN_PROGRESS
+    if not record.started_at:
+        record.started_at = record.timestamp
+    insert_run(record, db_path)
+
+
+def complete_run(
+    run_id: str,
+    *,
+    exit_code: int,
+    mlflow_run: Optional[str],
+    env_fingerprint_json: Optional[str],
+    env_fingerprint_status: Optional[str],
+    finished_at: str,
+    db_path: Optional[str] = None,
+) -> None:
+    """Finalize a previously inserted ``in_progress`` row as ``done``.
+
+    Only the fields that are not knowable before the child process runs are
+    updated; everything else (snapshot info, manifest paths, names, dvc
+    linkage, run command) was written by :func:`insert_running_run`.
+    """
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE tree SET status = ?, exit_code = ?, mlflow_run = ?, "
+            "env_fingerprint_json = ?, env_fingerprint_status = ?, "
+            "finished_at = ? WHERE id = ?",
+            (
+                RUN_STATUS_DONE,
+                exit_code,
+                mlflow_run,
+                env_fingerprint_json,
+                env_fingerprint_status,
+                finished_at,
+                run_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def fail_run(
+    run_id: str,
+    *,
+    exit_code: Optional[int],
+    finished_at: str,
+    mlflow_run: Optional[str] = None,
+    env_fingerprint_json: Optional[str] = None,
+    env_fingerprint_status: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> None:
+    """Finalize a previously inserted ``in_progress`` row as ``failed``.
+
+    Used for non-zero child exit codes and for AIline-side errors that occur
+    after the lifecycle row was inserted. ``mlflow_run`` and the env
+    fingerprint fields are accepted so we can keep them when the child *did*
+    run (non-zero exit) and skip them when the failure happened earlier.
+    """
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE tree SET status = ?, exit_code = ?, mlflow_run = COALESCE(?, mlflow_run), "
+            "env_fingerprint_json = COALESCE(?, env_fingerprint_json), "
+            "env_fingerprint_status = COALESCE(?, env_fingerprint_status), "
+            "finished_at = ? WHERE id = ?",
+            (
+                RUN_STATUS_FAILED,
+                exit_code,
+                mlflow_run,
+                env_fingerprint_json,
+                env_fingerprint_status,
+                finished_at,
+                run_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def fetch_status_rows(db_path: Optional[str] = None) -> List[dict]:
     conn = _connect(db_path)
     try:
@@ -93,7 +200,8 @@ def fetch_status_rows(db_path: Optional[str] = None) -> List[dict]:
         cur.execute(
             "SELECT id, type, parent, mlflow_run, dvc_version, snapshot_path, timestamp, "
             "git_url, dvc_linkage_json, dvc_linkage_status, env_fingerprint_json, "
-            "env_fingerprint_status, run_command_json, run_command_summary, record_name FROM tree"
+            "env_fingerprint_status, run_command_json, run_command_summary, record_name, "
+            "status, started_at, finished_at, exit_code FROM tree"
         )
         rows = cur.fetchall()
     finally:
@@ -122,6 +230,10 @@ def fetch_status_rows(db_path: Optional[str] = None) -> List[dict]:
                 "run_command_summary": r[13],
                 "run_command_payload": run_command_payload,
                 "record_name": r[14],
+                "status": r[15] or RUN_STATUS_DONE,
+                "started_at": r[16],
+                "finished_at": r[17],
+                "exit_code": r[18],
             }
         )
     return result
@@ -134,7 +246,8 @@ def fetch_commits_overview(db_path: Optional[str] = None) -> List[dict]:
         cur.execute(
             "SELECT id, type, parent, mlflow_run, dvc_version, snapshot_path, "
             "timestamp, git_url, run_command_summary, dvc_linkage_status, "
-            "env_fingerprint_status, record_name FROM tree"
+            "env_fingerprint_status, record_name, status, started_at, "
+            "finished_at, exit_code FROM tree"
         )
         rows = cur.fetchall()
     finally:
@@ -153,6 +266,10 @@ def fetch_commits_overview(db_path: Optional[str] = None) -> List[dict]:
             "dvc_linkage_status": r[9],
             "env_fingerprint_status": r[10],
             "record_name": r[11],
+            "status": r[12] or RUN_STATUS_DONE,
+            "started_at": r[13],
+            "finished_at": r[14],
+            "exit_code": r[15],
         }
         for r in rows
     ]

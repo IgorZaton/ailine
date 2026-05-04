@@ -23,6 +23,13 @@ _ADDITIVE_COLUMNS = {
     "run_command_json": "TEXT",
     "run_command_summary": "TEXT",
     "record_name": "TEXT",
+    # Run lifecycle: status flag visible in UI/CLI from the moment a run starts
+    # ("in_progress") through completion ("done") or failure ("failed"). Plus
+    # the wall-clock timestamps and the child's exit code, populated on finish.
+    "status": "TEXT",
+    "started_at": "TEXT",
+    "finished_at": "TEXT",
+    "exit_code": "INTEGER",
 }
 
 
@@ -32,6 +39,9 @@ def _resolve_db_path(db_path: Optional[str]) -> str:
 
 def init_db(db_path: Optional[str] = None) -> None:
     path = _resolve_db_path(db_path)
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     if os.path.exists(path):
         logging.info(f"Database found at {path}")
     conn = sqlite3.connect(path)

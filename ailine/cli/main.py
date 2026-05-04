@@ -20,8 +20,10 @@ from ailine.cli.restore import restore_command
 from ailine.cli.track import track_command
 from ailine.config import constants
 from ailine.config.validate import ConfigValidationError, validate_config
+from ailine.integrations.mlflow_links import resolve_mlflow_ui_url
 from ailine.persistence import repository
 from ailine.persistence.db import init_db
+from ailine.run.migration import migrate_legacy_state_artifacts
 from ailine.run.session import SessionError, run_tracked_command
 from ailine.snapshot.storage import resolve_storage_dir
 from ailine.web.state import get_repo_url, load_repo_url
@@ -29,6 +31,10 @@ from ailine.web.state import get_repo_url, load_repo_url
 
 @click.group()
 def cli():
+    # Relocate any pre-``.ailine/`` artifacts BEFORE opening DB/log so the new
+    # paths are used from this invocation onwards. Best-effort: failures fall
+    # back to legacy paths instead of aborting the user's command.
+    migrate_legacy_state_artifacts()
     init_db()
     load_repo_url()
     mlflow.set_tracking_uri(constants.MLFLOW_TRACKING_URI)
@@ -119,6 +125,19 @@ def run(script, dataset, dvc_add, record_label):
             err=True,
         )
 
+    def _announce_demo_started(record_id: str, mlflow_run_id) -> None:
+        click.echo(
+            f"ailine run: tracking record={record_id} status=in_progress",
+            err=True,
+        )
+        if mlflow_run_id:
+            url = resolve_mlflow_ui_url(mlflow_run_id)
+            if url:
+                click.echo(
+                    f"ailine run: MLflow run={mlflow_run_id} url={url}",
+                    err=True,
+                )
+
     try:
         result = run_tracked_command(
             git_root=git_root,
@@ -127,6 +146,7 @@ def run(script, dataset, dvc_add, record_label):
             config=config,
             record_name=record_label,
             on_resolved_labels=_preview_demo,
+            on_run_started=_announce_demo_started,
         )
     except SessionError as exc:
         raise click.ClickException(str(exc)) from exc

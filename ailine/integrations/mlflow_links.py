@@ -18,13 +18,26 @@ def run_detail_url(experiment_id: str, run_id: str) -> str:
     return f"{base}/#/experiments/{experiment_id}/runs/{run_id}"
 
 
+def provisional_run_detail_url(run_id: str) -> str:
+    """Best-effort run URL when experiment id lookup is temporarily unavailable.
+
+    During an active in-progress run the MLflow metadata lookup may lag in some
+    backends. We still provide a clickable run URL so the lineage UI can link
+    immediately after AIline inserts the ``in_progress`` row.
+    """
+    base = constants.MLFLOW_UI_BASE.rstrip("/")
+    return f"{base}/#/experiments/0/runs/{run_id}"
+
+
 def get_mlflow_run_browser_context(run_id: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     """Return ``(detail_page_url, run_display_name)`` for a stored ``run_id``.
 
     Uses a single ``mlflow.get_run`` call. ``run_display_name`` is the
     ``mlflow.runName`` tag when present (same string AIline passes to
     ``start_run(run_name=...)`` in wrap mode when names are aligned).
-    On failure returns ``(None, None)`` and logs at debug.
+    On metadata-lookup failure returns a provisional run URL (experiment ``0``)
+    and ``None`` display name; this keeps links clickable while the run is
+    still in progress and the backend hasn't surfaced full run metadata yet.
     """
     if not run_id or not str(run_id).strip():
         return None, None
@@ -38,7 +51,7 @@ def get_mlflow_run_browser_context(run_id: Optional[str]) -> tuple[Optional[str]
         return url, display
     except Exception as exc:
         logging.debug("MLflow run lookup unavailable for %s: %s", rid, exc)
-        return None, None
+        return provisional_run_detail_url(rid), None
 
 
 def resolve_mlflow_ui_url(run_id: Optional[str]) -> Optional[str]:

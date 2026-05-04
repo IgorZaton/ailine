@@ -122,6 +122,7 @@ def init_demo_command(repo_url: str):
             f"Directory {constants.REPO_DIR} already exists. Run 'ailine reset-demo' first."
         )
     subprocess.run(["git", "clone", repo_url, constants.REPO_DIR], check=True)
+    init_state_dirs()
     with open(constants.CONFIG_PATH, "w") as f:
         f.write(repo_url)
     subprocess.run(["git", "fetch"], check=True, cwd=constants.REPO_DIR)

@@ -13,6 +13,7 @@
             <tr>
                 <th scope="col">Record</th>
                 <th scope="col">Name</th>
+                <th scope="col">Status</th>
                 <th scope="col">Type</th>
                 <th scope="col">MLflow run</th>
                 <th scope="col">Git</th>
@@ -40,6 +41,16 @@
                         <span title="{{ entry.record_name }}">{{ entry.record_name }}</span>
                     {% else %}
                         <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% set status_value = entry.status or 'done' %}
+                    {% if status_value == 'in_progress' %}
+                        <span class="badge rounded-pill text-bg-warning ailine-badge-type" title="Run is currently in progress">IN PROGRESS</span>
+                    {% elif status_value == 'failed' %}
+                        <span class="badge rounded-pill text-bg-danger ailine-badge-type" title="Run finished with non-zero exit code{% if entry.exit_code is not none %} ({{ entry.exit_code }}){% endif %}">FAILED{% if entry.exit_code is not none %} ({{ entry.exit_code }}){% endif %}</span>
+                    {% else %}
+                        <span class="badge rounded-pill text-bg-success ailine-badge-type" title="Run finished successfully">DONE</span>
                     {% endif %}
                 </td>
                 <td>
@@ -113,7 +124,7 @@
         {% endfor %}
         {% if not rows %}
             <tr class="ailine-empty-row">
-                <td colspan="10">No runs recorded yet. Use <code class="px-1">ailine track --</code> to record one.</td>
+                <td colspan="11">No runs recorded yet. Use <code class="px-1">ailine track --</code> to record one.</td>
             </tr>
         {% endif %}
         </tbody>
