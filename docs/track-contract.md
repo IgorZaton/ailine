@@ -34,6 +34,13 @@ because `repo/train.py` is not an executable binary. Use
 5. Runs `python train.py --epochs 5` (or whatever you put after `--`) as a
    subprocess from the work-tree, **propagating the exit code**.
 
+The lineage row is **inserted with `status = in_progress` before the
+subprocess starts**, then finalized to `done` (exit 0) or `failed` (non-zero
+exit, or any AIline-side error after the row was published). This means a
+freshly-launched run is visible in `ailine status` and the web UI from
+second zero, and a crashed run never gets stuck displaying as in-progress
+forever — see [Run status lifecycle](#run-status-lifecycle).
+
 ## What AIline does NOT do
 
 - **No magic auto-detection** of frameworks. Your script keeps full control.
@@ -59,6 +66,7 @@ track:
   mlflow:
     mode: inherit           # inherit | wrap | none
     set_env: false          # if true, ailine sets MLFLOW_TRACKING_URI before child
+    prelink: true           # inherit-only: pre-create MLflow run, export MLFLOW_RUN_ID
   dvc:
     verify: "off"           # off | warn | strict
     verify_commands: []     # e.g. [["dvc", "status", "--quiet"]]
@@ -99,6 +107,26 @@ run_capture:
 If `track.mlflow.set_env: true`, AIline sets `MLFLOW_TRACKING_URI` in the
 child environment before spawning. Useful when you do not want to bake the
 URI into your training code.
+
+### `track.mlflow.prelink` (inherit mode)
+
+When `mode: inherit` and `prelink: true` (the default), AIline pre-creates an
+MLflow run via the MLflow client API and exports `MLFLOW_RUN_ID` into the
+child environment before spawning. A plain `mlflow.start_run()` in your
+training script then resumes that run, so the AIline lineage row carries the
+real MLflow run id (and a clickable UI link) from the moment it is published
+- without requiring any `import ailine` in user code.
+
+The experiment for the pre-created run is resolved from
+`MLFLOW_EXPERIMENT_ID` then `MLFLOW_EXPERIMENT_NAME` (creating the named
+experiment if missing), falling back to MLflow's `Default` experiment
+(id `0`).
+
+Set `prelink: false` if your script explicitly opens runs with
+`mlflow.start_run(run_id=...)`, manages multiple top-level runs in one
+process, or otherwise needs MLflow to mint a fresh run id at script start.
+The setting is ignored for `mode: wrap` and `mode: none`. See the
+[Limitations](../README.md#limitations) section for full troubleshooting.
 
 ### `track.dvc.verify`
 
@@ -150,6 +178,49 @@ while still ignoring the rest of `dist/`:
 
 `snapshot.exclude_globs` in `.ailine.yml` is no longer supported and is
 rejected with a migration error.
+
+## Run status lifecycle
+
+Every recorded run carries an explicit status flag so you can tell live runs
+apart from finished ones at a glance in `ailine status`, the web UI, and any
+custom tooling that reads the SQLite tree:
+
+| Status        | When set                                                                                         |
+|---------------|--------------------------------------------------------------------------------------------------|
+| `in_progress` | Row is published right after AIline resolves the commit/snapshot id and (in `wrap` mode) opens the MLflow run, before the child subprocess starts. |
+| `done`        | Child subprocess returned exit code `0`. `finished_at` and `exit_code` are persisted.            |
+| `failed`      | Child subprocess returned non-zero, or AIline itself errored *after* publishing the row.         |
+
+In `wrap` mode the MLflow run id (and a clickable UI link) are printed
+alongside the `in_progress` announcement so you can open the live run before
+the first epoch finishes. In `inherit` mode AIline still associates the
+in-script MLflow run with the lineage row (best-effort) once the child
+exits.
+
+Existing rows recorded by older AIline versions (where `status` is `NULL`)
+are interpreted as `done` for backward-compatible display.
+
+## AIline state directory (`.ailine/`)
+
+AIline's own auto-generated artifacts live under `.ailine/` next to the
+snapshots dir, so the project root stays clean:
+
+| Artifact            | Path                            |
+|---------------------|---------------------------------|
+| Lineage SQLite DB   | `.ailine/tree.db`               |
+| Log file            | `.ailine/ailine.log`            |
+| Demo bookkeeping    | `.ailine/demo-config.txt`       |
+| Snapshots           | `.ailine/snapshots/`            |
+| Object store        | `.ailine/objects/`              |
+
+User-controlled paths (`mlruns/`, `repo/`, `.ailine.yml`, `.ailineignore`)
+are **not** relocated. On the first invocation in an older checkout AIline
+moves any legacy root-level artifacts (`ailine_tree.db`, `ailine.log`,
+`ailine_config.txt`) into `.ailine/`; if both legacy and new copies exist
+the legacy file is left in place and a warning is logged. Each path can
+still be overridden with the matching `AILINE_*` environment variable
+(`AILINE_DB_PATH`, `AILINE_LOG_PATH`, `AILINE_CONFIG_PATH`,
+`AILINE_STORAGE_DIR`, `AILINE_STATE_DIR`).
 
 ## Reproducibility per run
 

@@ -52,6 +52,11 @@ DEFAULT_TRACK_CONFIG = {
         "mode": "inherit",   # inherit | wrap | none
         "set_env": False,    # if true, ailine sets MLFLOW_TRACKING_URI before child
         "inherit_name_sync": "auto",  # off | auto | force
+        # In inherit mode: pre-create the MLflow run and export MLFLOW_RUN_ID
+        # to the child process so the lineage UI shows a live link from
+        # second zero, without forcing the training script to import ailine.
+        # Ignored for wrap/none modes.
+        "prelink": True,
     },
     "dvc": {
         "verify": "off",        # off | warn | strict

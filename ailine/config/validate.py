@@ -133,6 +133,10 @@ def _validate_track(raw: Dict[str, Any]) -> Dict[str, Any]:
             f"Invalid track.mlflow.inherit_name_sync '{mlflow_cfg['inherit_name_sync']}'. "
             f"Allowed: {sorted(VALID_MLFLOW_INHERIT_NAME_SYNC)}."
         )
+    if not isinstance(mlflow_cfg.get("prelink", True), bool):
+        raise ConfigValidationError(
+            "track.mlflow.prelink must be true/false."
+        )
 
     dvc_cfg = cfg["dvc"]
     if dvc_cfg["verify"] not in VALID_DVC_VERIFY_LEVELS:

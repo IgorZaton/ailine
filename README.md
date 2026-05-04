@@ -62,7 +62,7 @@ ailine reset-demo                   # remove ./repo, DB, mlruns/
 |---------|---------|
 | `ailine init-workspace [--force]` | Bootstrap the pip-install workflow: write a default `.ailine.yml` and ensure state directories. No clone. |
 | `ailine doctor [--json] [--strict] [--config PATH]` | Validate `.ailine.yml` and the local environment. The single source of truth for "is my setup OK". |
-| `ailine track [--config PATH] [--run-name NAME] [--name NAME] -- <argv...>` | Run a command under AIline tracking. The argv after `--` is executed verbatim from the repo root. Snapshot location is configured via `snapshot.storage_dir` in `.ailine.yml` (or `AILINE_STORAGE_DIR`). |
+| `ailine track [--config PATH] [--run-name NAME] [--name NAME] -- <argv...>` | Run a command under AIline tracking. The argv after `--` is executed verbatim from the repo root. The lineage row is published with `status=in_progress` *before* the child starts (and the MLflow run id, in `wrap` mode, is printed alongside) so live runs are visible in `ailine status` and the web UI from second zero. Snapshot location is configured via `snapshot.storage_dir` in `.ailine.yml` (or `AILINE_STORAGE_DIR`). |
 | `ailine restore <snapshot_id> [--config PATH] [--dry-run] [--force]` | Restore the worktree to the exact state captured by `<snapshot_id>` (strict sync: extra files in scope are removed; `.git` and `.ailine` are always preserved). Aborts on a dirty worktree unless `--force`; `--dry-run` previews the write/delete plan without touching the filesystem. |
 | `ailine status [--verbose]` | List recorded runs: default output includes **full** `record_id` and `parent` lines (copy/paste for restore); `--verbose` dumps all fields. Errors clearly when the DB does not exist yet. |
 | `ailine serve` | Start the MLflow UI subprocess and the Flask app together (ports 5001 and 5000). |
@@ -114,10 +114,57 @@ run-capture toggle, plus the `project:` and `track:` blocks for the
 separately in `.ailineignore` (gitignore syntax) — see
 [docs/track-contract.md](docs/track-contract.md#ailineignore).
 
+AIline's own auto-generated artifacts (lineage DB, log file, demo
+bookkeeping) live under `.ailine/` next to `.ailine/snapshots/` so the
+project root stays clean. User-owned paths (`mlruns/`, `repo/`,
+`.ailine.yml`, `.ailineignore`) are never relocated. On first run inside an
+older checkout AIline transparently moves any legacy root-level artifacts
+(`ailine_tree.db`, `ailine.log`, `ailine_config.txt`) into `.ailine/`.
+
 - [docs/track-contract.md](docs/track-contract.md) — what `ailine track`
   guarantees and the full `.ailine.yml` schema.
 - [docs/repro-contract.md](docs/repro-contract.md) — the snapshot
   reproducibility guarantees AIline aims to provide.
+
+## Limitations
+
+### Inherit-mode pre-link (`track.mlflow.prelink`)
+
+In `track.mlflow.mode: inherit` AIline pre-creates an MLflow run and exports
+`MLFLOW_RUN_ID` to the child so the lineage UI shows a live MLflow link from
+second zero, **without requiring any `import ailine` in your training script**.
+
+This works for the common pattern: a single `mlflow.start_run()` call inside
+the training script. If your script has a more elaborate MLflow setup, the
+known caveats are:
+
+- **You explicitly call `mlflow.start_run(run_id=...)`**: your run id wins;
+  AIline's pre-created run becomes orphaned in MLflow. Set
+  `track.mlflow.prelink: false` to disable pre-creation in this case.
+- **Your script opens multiple top-level runs in one process**: the first
+  `start_run()` resumes AIline's pre-created run; subsequent ones create new
+  runs as usual but are not linked to the AIline lineage row.
+- **You select a non-default experiment inside the script** (e.g.
+  `mlflow.set_experiment(...)` after the run already started): MLflow ignores
+  the change for an in-progress run; the AIline run lives in whichever
+  experiment was active at create-time.
+- **Your tracking backend is unreachable at start**: pre-creation fails
+  silently and AIline falls back to post-hoc matching (status: `in_progress`
+  with empty MLflow column until the child finishes).
+
+#### Troubleshooting
+
+- **Empty MLflow column for in-progress runs**: confirm `MLFLOW_TRACKING_URI`
+  resolves from `ailine track`'s shell, then re-run with
+  `AILINE_LOG_LEVEL=DEBUG`. The log will show whether `create_run` succeeded.
+- **AIline's pre-created run shows up empty in MLflow UI**: your script took
+  a path that didn't resume it (e.g. explicit `run_id=...`). Either align the
+  script with the env-var convention or set `track.mlflow.prelink: false`.
+- **Wrong experiment**: set `MLFLOW_EXPERIMENT_NAME` or `MLFLOW_EXPERIMENT_ID`
+  in the shell that invokes `ailine track`. Both are honored by the
+  pre-creation step before falling back to MLflow's `Default` experiment.
+- **Multiple lineage rows for one training run**: typically means your
+  script opened a fresh run; see the second bullet under known caveats.
 
 ## Layout
 

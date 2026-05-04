@@ -185,6 +185,10 @@ class TrackedCommandTests(unittest.TestCase):
             start_run.assert_not_called()
 
     def test_inherit_mode_records_mlflow_run_when_post_hoc_lookup_succeeds(self):
+        # Disable inherit-mode pre-link so the post-hoc search is the path
+        # under test here.
+        cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["prelink"] = False
         with patch(
             "ailine.run.session._best_effort_mlflow_run_after_inherit_child",
             return_value="post-hoc-run-id",
@@ -193,7 +197,7 @@ class TrackedCommandTests(unittest.TestCase):
                 git_root=self.repo,
                 argv=[sys.executable, "-c", "print(1)"],
                 storage=self.storage,
-                config=self.config,
+                config=cfg,
             )
         mock_lookup.assert_called_once()
         self.assertEqual(result.mlflow_run_id, "post-hoc-run-id")
@@ -202,6 +206,7 @@ class TrackedCommandTests(unittest.TestCase):
         cfg = validate_config(self.cfg_path)
         cfg.track["mlflow"]["mode"] = "inherit"
         cfg.track["mlflow"]["inherit_name_sync"] = "auto"
+        cfg.track["mlflow"]["prelink"] = False
         with patch(
             "ailine.run.session._best_effort_mlflow_run_after_inherit_child",
             return_value="post-hoc-run-id",
@@ -224,6 +229,7 @@ class TrackedCommandTests(unittest.TestCase):
         cfg = validate_config(self.cfg_path)
         cfg.track["mlflow"]["mode"] = "inherit"
         cfg.track["mlflow"]["inherit_name_sync"] = "auto"
+        cfg.track["mlflow"]["prelink"] = False
         with patch(
             "ailine.run.session._best_effort_mlflow_run_after_inherit_child",
             return_value="post-hoc-run-id",
@@ -243,6 +249,7 @@ class TrackedCommandTests(unittest.TestCase):
         cfg = validate_config(self.cfg_path)
         cfg.track["mlflow"]["mode"] = "inherit"
         cfg.track["mlflow"]["inherit_name_sync"] = "force"
+        cfg.track["mlflow"]["prelink"] = False
         with patch(
             "ailine.run.session._best_effort_mlflow_run_after_inherit_child",
             return_value="post-hoc-run-id",

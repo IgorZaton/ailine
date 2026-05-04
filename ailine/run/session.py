@@ -23,6 +23,7 @@ raise :class:`SessionError` (callers translate to ``click.ClickException``).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -32,7 +33,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, Iterator, List, Optional, Sequence
 
 import git
 import mlflow
@@ -162,35 +163,84 @@ def _snapshot_if_dirty(
     return snapshot_result
 
 
-def _maybe_set_mlflow_env(track_mlflow_cfg: dict) -> Optional[dict]:
-    """When ``set_env=true``, inject MLFLOW_TRACKING_URI into the child env.
+def _maybe_set_mlflow_env(
+    track_mlflow_cfg: dict, prelink_run_id: Optional[str] = None
+) -> Optional[dict]:
+    """Build the child env dict with optional MLflow overrides.
 
-    Returns an env dict (copy of os.environ with overrides) or None when no
-    overrides are needed.
+    When ``set_env=true`` injects ``MLFLOW_TRACKING_URI``. When
+    ``prelink_run_id`` is provided (inherit-mode pre-link path), exports
+    ``MLFLOW_RUN_ID`` so a plain ``mlflow.start_run()`` in the user's script
+    resumes the AIline-pre-created run instead of creating a fresh one.
+    Never overwrites a user-supplied ``MLFLOW_RUN_ID``.
+
+    Returns an env dict (copy of ``os.environ`` with overrides) or ``None``
+    when no overrides are needed.
     """
-    if not track_mlflow_cfg.get("set_env"):
+    set_env = bool(track_mlflow_cfg.get("set_env"))
+    has_prelink = bool(prelink_run_id)
+    if not set_env and not has_prelink:
         return None
     env = os.environ.copy()
-    if "MLFLOW_TRACKING_URI" not in env:
+    if set_env and "MLFLOW_TRACKING_URI" not in env:
         env["MLFLOW_TRACKING_URI"] = mlflow.get_tracking_uri()
+    if has_prelink and "MLFLOW_RUN_ID" not in env:
+        env["MLFLOW_RUN_ID"] = str(prelink_run_id)
     return env
 
 
-def _execute_child(
-    argv: Sequence[str],
-    cwd: str,
-    env: Optional[dict],
-    mlflow_mode: str,
-    run_name: str,
-) -> tuple[int, Optional[str]]:
-    """Run the user command. Returns (exit_code, mlflow_run_id_or_None)."""
+def _precreate_mlflow_run_for_inherit(run_name: str) -> Optional[str]:
+    """Best-effort pre-create an MLflow run for inherit mode.
+
+    Returns the new ``run_id`` so AIline can populate the lineage row and
+    export ``MLFLOW_RUN_ID`` to the child. Returns ``None`` if pre-creation
+    fails for any reason (we degrade to today's post-hoc lookup rather than
+    aborting the user's command).
+
+    Experiment is resolved from ``MLFLOW_EXPERIMENT_ID`` /
+    ``MLFLOW_EXPERIMENT_NAME`` if set, otherwise MLflow's ``Default``
+    experiment (id ``"0"``). The run carries the ``mlflow.runName`` tag so
+    list views in the MLflow UI stay readable.
+    """
+    try:
+        mlflow.set_tracking_uri(constants.MLFLOW_TRACKING_URI)
+        client = MlflowClient()
+        experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID")
+        if not experiment_id:
+            name = os.environ.get("MLFLOW_EXPERIMENT_NAME")
+            if name:
+                experiment = client.get_experiment_by_name(name)
+                experiment_id = (
+                    experiment.experiment_id if experiment is not None else None
+                )
+                if experiment_id is None:
+                    experiment_id = client.create_experiment(name)
+        if not experiment_id:
+            experiment_id = "0"
+        run = client.create_run(
+            experiment_id=str(experiment_id),
+            tags={"mlflow.runName": run_name},
+        )
+        return run.info.run_id
+    except Exception as exc:
+        logging.debug("MLflow inherit-mode pre-link create_run failed: %s", exc)
+        return None
+
+
+@contextlib.contextmanager
+def _maybe_wrap_mlflow_run(mlflow_mode: str, run_name: str) -> Iterator[Optional[str]]:
+    """Yield ``mlflow_run_id`` (or ``None`` for non-wrap modes).
+
+    Splitting the wrap-mode context out of the subprocess call lets the caller
+    insert an ``in_progress`` lifecycle row *before* the child starts, with the
+    MLflow run id already known so the UI/CLI can surface a live link from the
+    very first moment the run exists.
+    """
     if mlflow_mode == "wrap":
         with mlflow.start_run(run_name=run_name):
-            run_id = mlflow.active_run().info.run_id
-            proc = subprocess.run(list(argv), cwd=cwd, env=env, check=False)
-            return proc.returncode, run_id
-    proc = subprocess.run(list(argv), cwd=cwd, env=env, check=False)
-    return proc.returncode, None
+            yield mlflow.active_run().info.run_id
+    else:
+        yield None
 
 
 def _start_time_utc(val) -> Optional[datetime]:
@@ -320,6 +370,7 @@ def run_tracked_command(
     run_name: Optional[str] = None,
     record_name: Optional[str] = None,
     on_resolved_labels: Optional[Callable[[str, str], None]] = None,
+    on_run_started: Optional[Callable[[str, Optional[str]], None]] = None,
 ) -> TrackResult:
     """Execute one tracked run and persist a :class:`RunRecord`.
 
@@ -339,6 +390,11 @@ def run_tracked_command(
     on_resolved_labels: optional callback ``(record_label, mlflow_wrap_name)``
         invoked once immediately after names are resolved (before snapshots /
         subprocess). Used by the CLI to print a preview line.
+    on_run_started: optional callback ``(record_id, mlflow_run_id_or_None)``
+        invoked once after the lifecycle row is inserted with ``status =
+        in_progress`` and (for ``wrap`` mode) the MLflow run id is known.
+        Fires before the child subprocess executes so the CLI/UI can surface a
+        live link.
     """
     if not argv:
         raise SessionError("argv must contain at least one element")
@@ -387,61 +443,141 @@ def run_tracked_command(
         run_command_summary = None
 
     track_mlflow = config.track["mlflow"]
-    child_env = _maybe_set_mlflow_env(track_mlflow)
-    since_utc = datetime.now(timezone.utc)
-    exit_code, mlflow_run_id = _execute_child(
-        argv=argv,
-        cwd=git_root,
-        env=child_env,
-        mlflow_mode=track_mlflow["mode"],
-        run_name=mlflow_wrap_name,
+
+    # Inherit-mode pre-link: pre-create the MLflow run before the child runs
+    # so the lineage row (and UI MLflow column) carry a real run id from the
+    # moment the row is published. Wrap mode opens its own outer run via
+    # _maybe_wrap_mlflow_run; none mode skips MLflow entirely.
+    prelink_run_id: Optional[str] = None
+    if track_mlflow["mode"] == "inherit" and bool(track_mlflow.get("prelink", True)):
+        prelink_run_id = _precreate_mlflow_run_for_inherit(record_label)
+
+    child_env = _maybe_set_mlflow_env(track_mlflow, prelink_run_id=prelink_run_id)
+
+    git_url = git_url_hint or _maybe_origin_url(repo)
+    env_fingerprint_json = json.dumps(env_fingerprint, sort_keys=True)
+    run_command_json = (
+        json.dumps(run_command_payload, sort_keys=True) if run_command_payload else None
     )
+
+    started_at = datetime.now().isoformat()
+    since_utc = datetime.now(timezone.utc)
+
+    # The lifecycle row is inserted from inside the optional MLflow wrap
+    # context so the row reflects the MLflow run id (if any) the moment it
+    # exists, and any AIline-side error after this point can be reliably
+    # finalized via fail_run().
+    exit_code: Optional[int] = None
+    mlflow_run_id: Optional[str] = prelink_run_id
+    record_inserted = False
+    record: Optional[RunRecord] = None
+
+    try:
+        with _maybe_wrap_mlflow_run(track_mlflow["mode"], mlflow_wrap_name) as wrap_run_id:
+            if wrap_run_id is not None:
+                mlflow_run_id = wrap_run_id
+
+            record = RunRecord(
+                id=commit_id,
+                type=commit_type.value,
+                parent=parent,
+                mlflow_run=mlflow_run_id,
+                dvc_version=None,
+                snapshot_path=snap.get("snapshot_path") if snap else None,
+                timestamp=started_at,
+                git_url=git_url if commit_type == CommitType.GIT else None,
+                manifest_path=snap.get("manifest_path") if snap else None,
+                metadata_path=snap.get("metadata_path") if snap else None,
+                archive_bytes=snap.get("archive_bytes") if snap else None,
+                included_file_count=snap.get("included_file_count") if snap else None,
+                excluded_file_count=snap.get("excluded_file_count") if snap else None,
+                large_file_pointer_count=snap.get("large_file_pointer_count") if snap else None,
+                diff_path=snap.get("diff_path") if snap else None,
+                dvc_linkage_json=json.dumps(dvc_linkage, sort_keys=True),
+                dvc_linkage_status=dvc_linkage["status"],
+                env_fingerprint_json=env_fingerprint_json,
+                env_fingerprint_status=env_fingerprint_status,
+                run_command_json=run_command_json,
+                run_command_summary=run_command_summary,
+                record_name=record_label,
+                started_at=started_at,
+            )
+            repository.insert_running_run(record)
+            record_inserted = True
+
+            if on_run_started is not None:
+                on_run_started(commit_id, mlflow_run_id)
+
+            proc = subprocess.run(list(argv), cwd=git_root, env=child_env, check=False)
+            exit_code = proc.returncode
+    except BaseException:
+        # AIline-side failure (subprocess raise, mlflow context error, etc.)
+        # after we already published an in_progress row: mark it failed so the
+        # UI does not leave it stuck visually as "in progress" forever.
+        if record_inserted:
+            try:
+                repository.fail_run(
+                    commit_id,
+                    exit_code=exit_code,
+                    finished_at=datetime.now().isoformat(),
+                    mlflow_run=mlflow_run_id,
+                )
+            except Exception as _exc:
+                logging.debug("fail_run on aborted track failed: %s", _exc)
+        raise
+
     until_utc = datetime.now(timezone.utc)
+
     if track_mlflow["mode"] == "inherit" and not mlflow_run_id:
         mlflow_run_id = _best_effort_mlflow_run_after_inherit_child(since_utc, until_utc)
     if track_mlflow["mode"] == "inherit":
-        _maybe_sync_inherit_mlflow_name(
-            mlflow_run_id,
-            record_label,
-            str(track_mlflow.get("inherit_name_sync", "auto")),
+        # When prelink supplied the run id, skip name sync: AIline already
+        # set ``mlflow.runName`` at create_run time, and the user's script
+        # may have legitimately renamed the run via mlflow.set_tag during
+        # execution.
+        if not prelink_run_id:
+            _maybe_sync_inherit_mlflow_name(
+                mlflow_run_id,
+                record_label,
+                str(track_mlflow.get("inherit_name_sync", "auto")),
+            )
+
+    finished_at = datetime.now().isoformat()
+    if exit_code == 0:
+        repository.complete_run(
+            commit_id,
+            exit_code=exit_code,
+            mlflow_run=mlflow_run_id,
+            env_fingerprint_json=env_fingerprint_json,
+            env_fingerprint_status=env_fingerprint_status,
+            finished_at=finished_at,
+        )
+    else:
+        repository.fail_run(
+            commit_id,
+            exit_code=exit_code,
+            finished_at=finished_at,
+            mlflow_run=mlflow_run_id,
+            env_fingerprint_json=env_fingerprint_json,
+            env_fingerprint_status=env_fingerprint_status,
         )
 
-    git_url = git_url_hint or _maybe_origin_url(repo)
-
-    record = RunRecord(
-        id=commit_id,
-        type=commit_type.value,
-        parent=parent,
-        mlflow_run=mlflow_run_id,
-        dvc_version=None,
-        snapshot_path=snap.get("snapshot_path") if snap else None,
-        timestamp=datetime.now().isoformat(),
-        git_url=git_url if commit_type == CommitType.GIT else None,
-        manifest_path=snap.get("manifest_path") if snap else None,
-        metadata_path=snap.get("metadata_path") if snap else None,
-        archive_bytes=snap.get("archive_bytes") if snap else None,
-        included_file_count=snap.get("included_file_count") if snap else None,
-        excluded_file_count=snap.get("excluded_file_count") if snap else None,
-        large_file_pointer_count=snap.get("large_file_pointer_count") if snap else None,
-        diff_path=snap.get("diff_path") if snap else None,
-        dvc_linkage_json=json.dumps(dvc_linkage, sort_keys=True),
-        dvc_linkage_status=dvc_linkage["status"],
-        env_fingerprint_json=json.dumps(env_fingerprint, sort_keys=True),
-        env_fingerprint_status=env_fingerprint_status,
-        run_command_json=(
-            json.dumps(run_command_payload, sort_keys=True) if run_command_payload else None
-        ),
-        run_command_summary=run_command_summary,
-        record_name=record_label,
-    )
-    repository.insert_run(record)
+    if record is not None:
+        record.mlflow_run = mlflow_run_id
+        record.exit_code = exit_code
+        record.finished_at = finished_at
+        record.status = (
+            repository.RUN_STATUS_DONE
+            if exit_code == 0
+            else repository.RUN_STATUS_FAILED
+        )
 
     return TrackResult(
-        exit_code=exit_code,
+        exit_code=exit_code if exit_code is not None else 1,
         commit_id=commit_id,
         commit_type=commit_type.value,
         record=record,
-        snapshot_path=record.snapshot_path,
+        snapshot_path=record.snapshot_path if record else None,
         mlflow_run_id=mlflow_run_id,
         record_name=record_label,
     )
