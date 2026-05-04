@@ -156,8 +156,28 @@ body.ailine-body {
     overflow: hidden;
 }
 
+/* Nest ``table-responsive`` *inside* this wrapper. If both classes sit on the
+   same element, ``overflow: hidden`` here wins over Bootstrap’s
+   ``overflow-x: auto`` and wide tables (e.g. long commands) get clipped with
+   no horizontal scroll. */
+.ailine-table-card > .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Wide tables: grow past the viewport so ``table-responsive`` can scroll;
+   ``min-width: 100%`` keeps narrow tables full-width inside the card. */
 .ailine-table-card .table {
     margin-bottom: 0;
+    width: max-content;
+    min-width: 100%;
+}
+
+/* Lineage dashboard: let the command column grow with content; scroll the
+   wrapper instead of ellipsis-at-half-a-line inside a clipped table. */
+.ailine-lineage-table .ailine-col-command code {
+    white-space: nowrap;
+    font-size: 0.82em;
 }
 
 .ailine-table thead th {
