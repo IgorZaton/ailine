@@ -26,12 +26,14 @@
 {% macro render_diff_sections(sections) %}
 <div class="code-diff-stack">
     {% for sec in sections %}
-    <article class="code-diff-file">
-        <header class="code-diff-file__header"><span class="code-diff-file__title" title="{{ sec.title }}">{{ sec.title }}</span></header>
+    <details class="code-diff-file"{% if loop.first %} open{% endif %}>
+        <summary class="code-diff-file__header">
+            <span class="code-diff-file__title" title="{{ sec.title }}">{{ sec.title }}</span>
+        </summary>
         <div class="code-diff-file__blob">
             {{ render_diff_body(sec.body) }}
         </div>
-    </article>
+    </details>
     {% endfor %}
 </div>
 {% endmacro %}
