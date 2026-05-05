@@ -70,6 +70,10 @@ environment:
 
 run_capture:
   enabled: true
+
+cleanup:
+  remove:
+    with_mlflow: false   # default for `ailine remove`; CLI `--with-mlflow` overrides
 """
 
 

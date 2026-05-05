@@ -52,6 +52,8 @@ class InitWorkspaceSeedTests(unittest.TestCase):
             yaml_content = f.read()
         # Migration: yaml template no longer carries `exclude_globs`.
         self.assertNotIn("exclude_globs", yaml_content)
+        self.assertIn("cleanup:", yaml_content)
+        self.assertIn("with_mlflow: false", yaml_content)
 
     @patch("ailine.cli.init.init_state_dirs")
     def test_preserves_user_ailineignore_without_force(self, _mock_state):
