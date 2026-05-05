@@ -1,0 +1,146 @@
+<!--
+  AIline / Troubleshooting
+  Goal: the questions a real user actually hits.
+  Length target: ~120-180 lines of HTML.
+-->
+<article class="docs-page" data-page="troubleshooting">
+  <header class="docs-page__header">
+    <p class="docs-page__eyebrow">AIline docs</p>
+    <h1>Troubleshooting</h1>
+    <p class="docs-page__lede">
+      The problems users hit most, with one diagnostic command and one fix per item. If something
+      is missing here, run <code>ailine doctor --strict --json</code>; it surfaces every config and
+      environment issue AIline can detect locally.
+    </p>
+  </header>
+
+  <aside class="docs-toc" aria-label="On this page">
+    <h2 class="docs-toc__title">On this page</h2>
+    <ol>
+      <li><a href="#empty-mlflow-column">MLflow column stays empty</a></li>
+      <li><a href="#wrong-tracking-server">Wrong tracking server</a></li>
+      <li><a href="#tag-link-recap">Tag-based linking, in 6 lines</a></li>
+      <li><a href="#prelink-deleted-experiment">prelink and the deleted-experiment error</a></li>
+      <li><a href="#restore-dirty-tree">Restore aborts on a dirty tree</a></li>
+      <li><a href="#snapshot-location">Where are my snapshots?</a></li>
+    </ol>
+  </aside>
+
+  <section id="empty-mlflow-column" class="docs-section">
+    <h2>MLflow column stays empty</h2>
+    <p>
+      Symptom: <code>ailine status --verbose</code> shows <code>MLflow Run : None</code> after
+      training finishes. AIline's plugin must be installed in the same Python venv as the training
+      script so MLflow auto-discovers it.
+    </p>
+    <p>One-line check:</p>
+<pre><code class="language-bash">python -c "import ailine.integrations.mlflow_plugin; print('ok')"</code></pre>
+    <p>If this fails, AIline is not installed in that venv. Install into the same env you run
+      training from:</p>
+<pre><code class="language-bash">pip install ailine-lineage</code></pre>
+    <p class="docs-callout">
+      The plugin is registered as an <code>mlflow.run_context_provider</code> entry point, so
+      reinstalling AIline (or upgrading) is what makes MLflow pick it up. See
+      <a href="/ailine/docs/concepts#link-strategy">Concepts &rarr; Real-time MLflow linking</a>
+      for the flow.
+    </p>
+  </section>
+
+  <section id="wrong-tracking-server" class="docs-section">
+    <h2>Wrong tracking server</h2>
+    <p>
+      Symptom: AIline opens an MLflow run on a different backend than your script
+      (e.g. local <code>file://mlruns</code> vs. a real server). AIline resolves the tracking URI
+      from <code>AILINE_MLFLOW_URI</code>, then <code>MLFLOW_TRACKING_URI</code>, then
+      <code>file://&lt;repo&gt;/mlruns</code>.
+    </p>
+    <p>Print what is actually resolved (and the source label):</p>
+<pre><code class="language-bash">ailine init-workspace</code></pre>
+    <p>
+      The tail of that command prints something like:
+    </p>
+<pre><code class="language-text">Resolved MLflow environment:
+  tracking URI: http://10.0.0.5:5000   (source: MLFLOW_TRACKING_URI)
+  UI base:      http://10.0.0.5:5000   (source: derived(MLFLOW_TRACKING_URI))
+  storage dir:  /work/.ailine/snapshots (source: default(.ailine/snapshots))</code></pre>
+    <p>Pin both values in your shell rc so AIline and your script always agree:</p>
+<pre><code class="language-bash">export AILINE_MLFLOW_URI=http://10.0.0.5:5000
+export AILINE_MLFLOW_UI_BASE=http://10.0.0.5:5000</code></pre>
+  </section>
+
+  <section id="tag-link-recap" class="docs-section">
+    <h2>Tag-based linking, in 6 lines</h2>
+    <ol>
+      <li><code>ailine track</code> generates a UUID per invocation.</li>
+      <li>UUID is exported as <code>AILINE_CORRELATION_ID</code> into the child process.</li>
+      <li>AIline's MLflow plugin tags every run with <code>ailine.correlation_id=&lt;uuid&gt;</code>.</li>
+      <li>The session polls MLflow for that tag every <code>link_poll_seconds</code> (default 3s).</li>
+      <li>First match updates the lineage row's <code>mlflow_run</code> column.</li>
+      <li>If no match by exit, AIline does one final retry and logs a clear warning.</li>
+    </ol>
+  </section>
+
+  <section id="prelink-deleted-experiment" class="docs-section">
+    <h2><code>prelink</code> and the deleted-experiment error</h2>
+    <p>
+      Symptom (legacy <code>link_strategy: prelink</code> only):
+    </p>
+<pre><code class="language-text">mlflow.exceptions.RestException:
+INVALID_PARAMETER_VALUE: The experiment 0 must be in the 'active' state. Current state is deleted.</code></pre>
+    <p>
+      <code>prelink</code> tries to <code>create_run</code> against the resolved experiment;
+      if that experiment is deleted, MLflow rejects the call. Two fixes:
+    </p>
+    <ul>
+      <li>
+        Switch to the default strategy in <code>.ailine.yml</code>:
+<pre><code class="language-yaml">track:
+  mlflow:
+    link_strategy: tag</code></pre>
+      </li>
+      <li>
+        Or keep <code>prelink</code> and point it at an active experiment:
+<pre><code class="language-bash">export MLFLOW_EXPERIMENT_NAME=my-active-experiment
+ailine track -- python train.py</code></pre>
+      </li>
+    </ul>
+  </section>
+
+  <section id="restore-dirty-tree" class="docs-section">
+    <h2>Restore aborts on a dirty tree</h2>
+    <p>
+      <code>ailine restore</code> refuses to overwrite local changes by default. Two ways forward:
+    </p>
+    <ul>
+      <li>
+        Preview the diff first with <code>--dry-run</code>:
+<pre><code class="language-bash">ailine restore &lt;snapshot_id&gt; --dry-run</code></pre>
+      </li>
+      <li>
+        Confirm you want to discard local changes with <code>--force</code>:
+<pre><code class="language-bash">ailine restore &lt;snapshot_id&gt; --force</code></pre>
+      </li>
+    </ul>
+    <p>
+      Paths matching <code>.ailineignore</code> are <strong>not</strong> considered dirty for this
+      check, and are never deleted by the strict-sync. <code>.git</code> and <code>.ailine</code>
+      are always preserved.
+    </p>
+  </section>
+
+  <section id="snapshot-location" class="docs-section">
+    <h2>Where are my snapshots?</h2>
+    <p>
+      Default: <code>&lt;repo&gt;/.ailine/snapshots/</code>, with content-addressed objects under
+      <code>.ailine/snapshots/objects/</code>. Override the directory in
+      <code>.ailine.yml</code>:
+    </p>
+<pre><code class="language-yaml">snapshot:
+  storage_dir: /mnt/big-disk/ailine-snapshots</code></pre>
+    <p>Or via environment variable for one-off runs:</p>
+<pre><code class="language-bash">export AILINE_STORAGE_DIR=/mnt/big-disk/ailine-snapshots
+ailine track -- python train.py</code></pre>
+    <p>Total size on disk:</p>
+<pre><code class="language-bash">du -sh .ailine/snapshots</code></pre>
+  </section>
+</article>

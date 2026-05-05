@@ -1,0 +1,150 @@
+<!--
+  AIline / CLI reference
+  Goal: practical reference, not exhaustive man pages.
+  Length target: ~150-220 lines of HTML.
+-->
+<article class="docs-page" data-page="cli-reference">
+  <header class="docs-page__header">
+    <p class="docs-page__eyebrow">AIline docs</p>
+    <h1>CLI reference</h1>
+    <p class="docs-page__lede">
+      Every command exposed by the <code>ailine</code> entry point. Each entry is one example
+      followed by what changes on disk or in the lineage database. Demo-only commands
+      (<code>init-demo</code>, <code>run</code>, <code>reset-demo</code>) live on the
+      <a href="/ailine/docs/internals">Internals</a> page.
+    </p>
+  </header>
+
+  <aside class="docs-toc" aria-label="On this page">
+    <h2 class="docs-toc__title">On this page</h2>
+    <ol>
+      <li><a href="#commands">Commands</a></li>
+      <li><a href="#recipe-track-end-to-end">Recipe: track a run end to end</a></li>
+      <li><a href="#recipe-restore-previous-run">Recipe: restore a previous run</a></li>
+    </ol>
+  </aside>
+
+  <section id="commands" class="docs-section">
+    <h2>Commands</h2>
+
+    <article class="docs-cmd" id="cmd-init-workspace">
+      <h3><code>ailine init-workspace</code></h3>
+      <p>Bootstrap a project: write a default <code>.ailine.yml</code>, seed
+        <code>.ailineignore</code>, create the <code>.ailine/</code> state directory, and print
+        the resolved MLflow / storage environment with source labels.</p>
+<pre><code class="language-bash">ailine init-workspace
+# pass --force to overwrite an existing .ailine.yml or .ailineignore</code></pre>
+    </article>
+
+    <article class="docs-cmd" id="cmd-doctor">
+      <h3><code>ailine doctor</code></h3>
+      <p>Validate <code>.ailine.yml</code> and the local environment. The single source of truth
+        for &ldquo;is my setup OK&rdquo;.</p>
+<pre><code class="language-bash">ailine doctor
+ailine doctor --strict --json</code></pre>
+    </article>
+
+    <article class="docs-cmd" id="cmd-track">
+      <h3><code>ailine track -- &lt;argv&gt;</code></h3>
+      <p>Run a command under AIline tracking. Everything after <code>--</code> is executed
+        verbatim from the repo root (no shell). The lineage row is published as
+        <code>in_progress</code> before the child starts, and the MLflow link appears live in
+        <code>ailine status</code> and the web UI.</p>
+<pre><code class="language-bash">ailine track -- python train.py --epochs 5
+ailine track --name baseline-A -- python train.py --epochs 5
+ailine track --run-name custom-mlflow-name -- python train.py</code></pre>
+      <p class="docs-callout">
+        The lineage row's name defaults to a random <em>adjective-animal</em> label. Use
+        <code>--name</code> for the AIline row, <code>--run-name</code> for the MLflow run name
+        when in <code>wrap</code> mode.
+      </p>
+    </article>
+
+    <article class="docs-cmd" id="cmd-status">
+      <h3><code>ailine status</code></h3>
+      <p>List recorded runs. Default output prints the full record id and parent on dedicated
+        lines (copy/paste for restore); <code>--verbose</code> dumps every field including the
+        environment fingerprint.</p>
+<pre><code class="language-bash">ailine status
+ailine status --verbose</code></pre>
+    </article>
+
+    <article class="docs-cmd" id="cmd-restore">
+      <h3><code>ailine restore &lt;snapshot_id&gt;</code></h3>
+      <p>Restore the worktree to the exact state captured by <code>&lt;snapshot_id&gt;</code>.
+        Strict sync: extra files in scope are removed; <code>.git</code> and <code>.ailine</code>
+        are always preserved; paths matching <code>.ailineignore</code> are left alone. Aborts on
+        a dirty tree unless <code>--force</code> is passed.</p>
+<pre><code class="language-bash">ailine restore 8f3c... --dry-run
+ailine restore 8f3c...
+ailine restore 8f3c... --force</code></pre>
+    </article>
+
+    <article class="docs-cmd" id="cmd-remove">
+      <h3><code>ailine remove &lt;id&gt;</code></h3>
+      <p>Delete one lineage record and its on-disk fan-out: the row in <code>.ailine/tree.db</code>,
+        the manifest / metadata / diff files in the storage dir, and any content-addressed
+        objects only this row referenced (shared objects survive). The linked MLflow run is
+        <strong>not</strong> deleted by default.</p>
+<pre><code class="language-bash">ailine remove 8f3c... --dry-run
+ailine remove 8f3c...
+ailine remove 8f3c... --with-mlflow true</code></pre>
+      <p>Override the default through <code>cleanup.remove.with_mlflow</code> in
+        <code>.ailine.yml</code>. CLI value wins over YAML, YAML wins over the built-in
+        default of <code>false</code>.</p>
+    </article>
+
+    <article class="docs-cmd" id="cmd-purge">
+      <h3><code>ailine purge</code></h3>
+      <p>Project-wide reset: removes <code>.ailine/</code>, <code>.ailine.yml</code>,
+        <code>.ailineignore</code>, and any non-default snapshot <code>storage_dir</code>
+        configured outside <code>.ailine/</code>. Leaves <code>mlruns/</code> and any user code
+        alone. Always asks <code>Confirm? [y/N]</code> before deleting; <code>--dry-run</code>
+        skips the prompt and prints the plan only.</p>
+<pre><code class="language-bash">ailine purge --dry-run
+ailine purge</code></pre>
+    </article>
+
+    <article class="docs-cmd" id="cmd-serve">
+      <h3><code>ailine serve</code></h3>
+      <p>Start the AIline Flask app and the MLflow UI subprocess together. Prints both URLs at
+        startup.</p>
+<pre><code class="language-bash">ailine serve
+# AIline UI: http://127.0.0.1:5000
+# MLflow UI: http://127.0.0.1:5001</code></pre>
+    </article>
+  </section>
+
+  <section id="recipe-track-end-to-end" class="docs-section">
+    <h2>Recipe: track a run end to end</h2>
+    <p>From a fresh checkout, into a working lineage row plus MLflow run.</p>
+<pre><code class="language-bash">cd /path/to/your/repo
+ailine init-workspace
+ailine doctor
+ailine track --name first-run -- python train.py --epochs 5
+ailine status</code></pre>
+    <p>
+      AIline writes a snapshot if the tree is dirty, runs your command, and finalizes the row to
+      <code>done</code> (exit 0) or <code>failed</code> (non-zero). The MLflow column populates
+      mid-flight via <code>link_strategy: tag</code>.
+    </p>
+  </section>
+
+  <section id="recipe-restore-previous-run" class="docs-section">
+    <h2>Recipe: restore a previous run</h2>
+    <p>Use <code>ailine status</code> to find the id, preview the plan with
+      <code>--dry-run</code>, then apply.</p>
+<pre><code class="language-bash">ailine status
+# copy the ID line of the run you want to restore
+
+ailine restore &lt;snapshot_id&gt; --dry-run
+# review the write/delete plan
+
+ailine restore &lt;snapshot_id&gt;</code></pre>
+    <p>
+      The current worktree must be clean (or pass <code>--force</code> to override).
+      <code>.git</code>, <code>.ailine</code>, and anything matching <code>.ailineignore</code>
+      are never touched.
+    </p>
+  </section>
+</article>

@@ -1,0 +1,87 @@
+<!--
+  AIline / Quickstart
+  Goal: a working tracked run in under 2 minutes.
+  Length target: ~80-120 lines of HTML.
+-->
+<article class="docs-page" data-page="quickstart">
+  <header class="docs-page__header">
+    <p class="docs-page__eyebrow">AIline docs</p>
+    <h1>Quickstart</h1>
+    <p class="docs-page__lede">
+      AIline is a lineage tracker for ML experiments: it records the exact code, snapshot, environment,
+      and MLflow run id behind every training command. You wrap your existing command with
+      <code>ailine track --</code> and keep your script unchanged.
+    </p>
+  </header>
+
+  <aside class="docs-toc" aria-label="On this page">
+    <h2 class="docs-toc__title">On this page</h2>
+    <ol>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#three-commands">Three commands</a></li>
+      <li><a href="#what-you-get">What you get</a></li>
+      <li><a href="#next">Next steps</a></li>
+    </ol>
+  </aside>
+
+  <section id="install" class="docs-section">
+    <h2>Install</h2>
+    <p>From PyPI, into the same Python environment as your training script:</p>
+<pre><code class="language-bash">pip install ailine-lineage</code></pre>
+    <p>
+      AIline ships an MLflow plugin that auto-tags runs with a correlation id. The plugin is
+      auto-discovered by MLflow only when both packages live in the same venv, so install AIline
+      into the venv your training command runs in.
+    </p>
+  </section>
+
+  <section id="three-commands" class="docs-section">
+    <h2>Three commands</h2>
+    <p>Run these from the root of any Git repository.</p>
+
+    <h3>1. Initialize the workspace</h3>
+<pre><code class="language-bash">ailine init-workspace</code></pre>
+    <p>
+      Writes a default <code>.ailine.yml</code> and <code>.ailineignore</code>, creates the
+      <code>.ailine/</code> state directory, and prints the resolved MLflow tracking URI / UI base /
+      storage dir together with their source (env var or default). Pin the printed exports in your
+      shell rc to avoid surprises later.
+    </p>
+
+    <h3>2. Verify the setup</h3>
+<pre><code class="language-bash">ailine doctor</code></pre>
+    <p>Validates <code>.ailine.yml</code> and the local environment. One command, green-light or actionable error.</p>
+
+    <h3>3. Track a real run</h3>
+<pre><code class="language-bash">ailine track -- python train.py --epochs 5</code></pre>
+    <p>Everything after <code>--</code> is the program AIline runs (verbatim, no shell). Sample output:</p>
+<pre><code class="language-text">ailine track: repo=/work/myproj name='witty-otter'
+ailine track: tracking record=8f3c... status=in_progress
+ailine track: MLflow run=73f0ca... url=http://127.0.0.1:5001/#/experiments/0/runs/73f0ca...
+... your training output ...
+ailine track: recorded name='witty-otter' snapshot=8f3c... exit=0</code></pre>
+  </section>
+
+  <section id="what-you-get" class="docs-section">
+    <h2>What you get</h2>
+    <ul>
+      <li>A lineage row visible in <code>ailine status</code> from second zero, with a live MLflow link.</li>
+      <li>A content-addressed snapshot of the working tree when uncommitted changes exist.</li>
+      <li>The exact <code>argv</code>, <code>cwd</code>, environment fingerprint, and DVC linkage persisted per run.</li>
+      <li>An MLflow run automatically associated with the lineage row, no <code>import ailine</code> in your script.</li>
+    </ul>
+    <p>Inspect what was captured:</p>
+<pre><code class="language-bash">ailine status --verbose</code></pre>
+    <p>Or open both UIs together (AIline on :5000, MLflow on :5001):</p>
+<pre><code class="language-bash">ailine serve</code></pre>
+  </section>
+
+  <section id="next" class="docs-section">
+    <h2>Next steps</h2>
+    <ul>
+      <li><a href="/ailine/docs/concepts">Concepts</a> &mdash; how AIline thinks about runs, snapshots, and MLflow.</li>
+      <li><a href="/ailine/docs/cli-reference">CLI reference</a> &mdash; every command with one example.</li>
+      <li><a href="/ailine/docs/troubleshooting">Troubleshooting</a> &mdash; the questions real users hit first.</li>
+    </ul>
+  </section>
+</article>

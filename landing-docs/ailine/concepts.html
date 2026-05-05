@@ -1,0 +1,151 @@
+<!--
+  AIline / Concepts
+  Goal: just enough mental model to make the rest of the docs make sense.
+  Length target: ~100-150 lines of HTML.
+-->
+<article class="docs-page" data-page="concepts">
+  <header class="docs-page__header">
+    <p class="docs-page__eyebrow">AIline docs</p>
+    <h1>Concepts</h1>
+    <p class="docs-page__lede">
+      Four ideas cover almost everything AIline does: the <strong>lineage row</strong>, the
+      <strong>snapshot</strong>, the <strong>MLflow link strategy</strong>, and the two project
+      files <code>.ailine.yml</code> and <code>.ailineignore</code>.
+    </p>
+  </header>
+
+  <aside class="docs-toc" aria-label="On this page">
+    <h2 class="docs-toc__title">On this page</h2>
+    <ol>
+      <li><a href="#lineage-vs-mlflow">Lineage row vs. MLflow run</a></li>
+      <li><a href="#snapshot-vs-commit">Snapshot vs. commit</a></li>
+      <li><a href="#link-strategy">Real-time MLflow linking</a></li>
+      <li><a href="#config-files">.ailine.yml and .ailineignore</a></li>
+    </ol>
+  </aside>
+
+  <section id="lineage-vs-mlflow" class="docs-section">
+    <h2>Lineage row vs. MLflow run</h2>
+    <p>
+      A <strong>lineage row</strong> is what AIline writes to its local SQLite database when you
+      run <code>ailine track</code>. It carries the code identity (Git commit or snapshot id),
+      the exact argv, the environment fingerprint, DVC linkage, and a pointer to the matching
+      MLflow run. The <strong>MLflow run</strong> is whatever your training script (or AIline in
+      <code>wrap</code> mode) opens; AIline does not own its metrics or params.
+    </p>
+
+    <figure class="docs-diagram">
+      <pre class="docs-diagram__ascii"><code>ailine track --
+   |
+   v
++---------------------+        +--------------------+
+| AIline lineage row  |  &lt;----  | MLflow run         |
+| (.ailine/tree.db)   |        | (your tracking     |
+|  - id, snapshot,    |  link  |  server / file://) |
+|  - argv, env, dvc,  |  ----&gt; |  - metrics         |
+|  - mlflow_run id    |        |  - params          |
++---------------------+        +--------------------+</code></pre>
+      <figcaption>
+        AIline persists lineage; MLflow persists metrics. The two are stitched together by the
+        <code>mlflow_run</code> column on the lineage row.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="snapshot-vs-commit" class="docs-section">
+    <h2>Snapshot vs. commit</h2>
+    <p>
+      When you run <code>ailine track</code> on a clean Git tree, the lineage row is identified by
+      the Git commit SHA (<code>type=git</code>). When the tree is dirty (modified or untracked
+      files), AIline takes a <strong>content-addressed snapshot</strong> first
+      (<code>type=snapshot</code>):
+    </p>
+    <ul>
+      <li>Manifest of every included file with its <code>sha256</code>.</li>
+      <li>Per-file objects under <code>.ailine/snapshots/objects/</code>, deduplicated across runs.</li>
+      <li>A <code>git diff HEAD</code> patch and the list of untracked files.</li>
+      <li>The parent commit SHA and the snapshot's own content hash as the row id.</li>
+    </ul>
+    <p>
+      Files matching <code>.ailineignore</code> are skipped. Large non-DVC files use the policy
+      configured in <code>snapshot.large_file_mode</code> (<code>prompt</code>, <code>skip</code>,
+      or <code>include</code>). DVC-tracked files are recorded as pointers, never copied into the
+      snapshot.
+    </p>
+  </section>
+
+  <section id="link-strategy" class="docs-section">
+    <h2>Real-time MLflow linking</h2>
+    <p>
+      In <code>track.mlflow.mode: inherit</code> (the default) AIline does not open its own MLflow
+      run. Your script's <code>mlflow.start_run()</code> is the run. AIline still surfaces a live
+      MLflow link for that run via the default <code>link_strategy: tag</code>:
+    </p>
+    <ol>
+      <li>
+        <code>ailine track</code> generates a per-invocation
+        <code>AILINE_CORRELATION_ID</code> (UUID) and exports it into the child process.
+      </li>
+      <li>
+        AIline ships a tiny MLflow plugin that auto-tags every run started in that process with
+        <code>ailine.correlation_id=&lt;uuid&gt;</code>. No client code change required.
+      </li>
+      <li>
+        The session loop polls MLflow for that tag; the first match wins and AIline fills the
+        lineage row's <code>mlflow_run</code> column mid-flight.
+      </li>
+    </ol>
+    <p class="docs-callout docs-callout--info">
+      The plugin is auto-discovered only when AIline is installed in the same Python venv as the
+      training script. If the column stays empty, see the
+      <a href="/ailine/docs/troubleshooting">Troubleshooting</a> page.
+    </p>
+    <p>
+      Other strategies are available via <code>track.mlflow.link_strategy</code>:
+      <code>prelink</code> (legacy, AIline owns the run id) and <code>none</code> (no live linking,
+      best-effort post-hoc lookup).
+    </p>
+  </section>
+
+  <section id="config-files" class="docs-section">
+    <h2>.ailine.yml and .ailineignore</h2>
+    <p>
+      Two project-level files at the repo root drive AIline behavior. <code>ailine init-workspace</code>
+      seeds both with sensible defaults:
+    </p>
+
+    <h3>.ailine.yml</h3>
+    <p>
+      The behavior contract. Sets the MLflow mode and link strategy, the snapshot storage dir and
+      large-file policy, the DVC linkage rules, and cleanup defaults. Every key is documented in
+      the schema; the generated file lists every default explicitly so behavior never depends on
+      hidden defaults.
+    </p>
+<pre><code class="language-yaml">track:
+  mlflow:
+    mode: inherit
+    link_strategy: tag
+    link_poll_seconds: 3.0
+
+snapshot:
+  storage_dir: .ailine/snapshots
+  large_file_mb: 50
+  large_file_mode: prompt</code></pre>
+
+    <h3>.ailineignore</h3>
+    <p>
+      Snapshot ignore patterns in standard <code>gitignore</code> syntax. Used both by the snapshot
+      scan (these paths are not stored) and by <code>ailine restore</code> (these paths are
+      preserved on disk during a strict-sync). A built-in default set is always active even if the
+      file is missing &mdash; covering virtualenvs, build dirs, IDE caches, MLflow / W&amp;B / DVC
+      internals, and editor scratch.
+    </p>
+<pre><code class="language-gitignore">__pycache__/
+.venv/
+.idea/
+.cursor/
+mlruns/
+wandb/
+!dist/keep.txt   # negate a default with `!`</code></pre>
+  </section>
+</article>

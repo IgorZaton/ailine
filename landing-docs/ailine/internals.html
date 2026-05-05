@@ -1,0 +1,198 @@
+<!--
+  AIline / Internals
+  Goal: enough internals to evaluate AIline and contribute, no full code walkthrough.
+  Length target: ~150-220 lines of HTML.
+-->
+<article class="docs-page" data-page="internals">
+  <header class="docs-page__header">
+    <p class="docs-page__eyebrow">AIline docs &middot; for developers</p>
+    <h1>Internals</h1>
+    <p class="docs-page__lede">
+      How AIline is laid out, what it persists per run, how the MLflow plugin gets discovered, and
+      what the reproducibility guarantees actually cover. If you are integrating AIline into your
+      training stack, start with <a href="/ailine/docs/concepts">Concepts</a>; this page is for
+      deeper evaluation and contribution.
+    </p>
+  </header>
+
+  <aside class="docs-toc" aria-label="On this page">
+    <h2 class="docs-toc__title">On this page</h2>
+    <ol>
+      <li><a href="#layout">Repository layout</a></li>
+      <li><a href="#data-model">Lineage data model</a></li>
+      <li><a href="#state-dir">.ailine/ state directory</a></li>
+      <li><a href="#mlflow-plugin">MLflow plugin and correlation flow</a></li>
+      <li><a href="#repro-scope">Reproducibility scope and non-goals</a></li>
+      <li><a href="#releasing">Releasing</a></li>
+      <li><a href="#demo-commands">Demo commands</a></li>
+    </ol>
+  </aside>
+
+  <section id="layout" class="docs-section">
+    <h2>Repository layout</h2>
+<pre><code class="language-text">ailine/
+  cli/             # Click entry point + terminal formatters
+  config/          # .ailine.yml loaders + defaults + path constants
+  fingerprint/     # environment fingerprint
+  integrations/    # MLflow UI subprocess, MLflow run-context plugin, git URL helpers
+  linkage/         # DVC discovery + linkage classification
+  persistence/     # SQLite schema, migrations, repository facade
+  run/             # CLI run-command capture, session orchestrator, cleanup
+  snapshot/        # repo scan, manifest, content-addressed objects
+  web/             # Flask app factory + route modules + templates</code></pre>
+    <p>Tests sit under <code>tests/</code> and follow <code>test_&lt;module&gt;.py</code> naming.</p>
+  </section>
+
+  <section id="data-model" class="docs-section">
+    <h2>Lineage data model</h2>
+    <p>One SQLite table (<code>tree</code>) carries every recorded run. The fields you care about:</p>
+    <ul>
+      <li><strong>id</strong> &mdash; either a Git commit SHA (when the worktree was clean) or a
+        snapshot content hash (when it was dirty).</li>
+      <li><strong>type</strong> &mdash; <code>git</code> or <code>snapshot</code>.</li>
+      <li><strong>parent</strong> &mdash; the parent commit when <code>type = snapshot</code>.</li>
+      <li><strong>status</strong> &mdash; <code>in_progress</code>, <code>done</code>, or
+        <code>failed</code>. Set to <code>in_progress</code> before the child subprocess starts
+        and finalized to <code>done</code> / <code>failed</code> based on its exit code.</li>
+      <li><strong>mlflow_run</strong> &mdash; populated mid-flight via the correlation tag
+        (default), pre-link, or post-hoc lookup.</li>
+      <li><strong>snapshot_path / manifest_path / metadata_path / diff_path</strong> &mdash; on-disk
+        artifacts produced by the snapshot pipeline.</li>
+      <li><strong>dvc_linkage_json / env_fingerprint_json / run_command_json</strong> &mdash; structured
+        JSON blobs for DVC linkage, environment fingerprint, and the exact argv / cwd / timestamp.</li>
+    </ul>
+    <p>Old rows where <code>status</code> is <code>NULL</code> are interpreted as <code>done</code>
+      for backward-compatible display.</p>
+  </section>
+
+  <section id="state-dir" class="docs-section">
+    <h2><code>.ailine/</code> state directory</h2>
+    <p>AIline's auto-generated artifacts live under <code>.ailine/</code> at the repo root, so the
+      project root stays clean.</p>
+    <table class="docs-table">
+      <thead>
+        <tr><th>Artifact</th><th>Path</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Lineage SQLite DB</td><td><code>.ailine/tree.db</code></td></tr>
+        <tr><td>Log file</td><td><code>.ailine/ailine.log</code></td></tr>
+        <tr><td>Demo bookkeeping</td><td><code>.ailine/demo-config.txt</code></td></tr>
+        <tr><td>Snapshots</td><td><code>.ailine/snapshots/</code></td></tr>
+        <tr><td>Object store</td><td><code>.ailine/snapshots/objects/</code></td></tr>
+      </tbody>
+    </table>
+    <p>
+      User-controlled paths (<code>mlruns/</code>, <code>.ailine.yml</code>,
+      <code>.ailineignore</code>) are never relocated. On the first invocation in an older
+      checkout AIline transparently moves any legacy root-level artifacts
+      (<code>ailine_tree.db</code>, <code>ailine.log</code>, <code>ailine_config.txt</code>) into
+      <code>.ailine/</code>. Each path can be overridden with the matching <code>AILINE_*</code>
+      environment variable (<code>AILINE_DB_PATH</code>, <code>AILINE_LOG_PATH</code>,
+      <code>AILINE_CONFIG_PATH</code>, <code>AILINE_STORAGE_DIR</code>,
+      <code>AILINE_STATE_DIR</code>).
+    </p>
+  </section>
+
+  <section id="mlflow-plugin" class="docs-section">
+    <h2>MLflow plugin and correlation flow</h2>
+    <p>
+      AIline registers a <code>RunContextProvider</code> via Poetry's plugin metadata. MLflow
+      auto-discovers any provider declared under the <code>mlflow.run_context_provider</code>
+      entry-point group and applies its <code>tags()</code> to every run started in the same
+      Python process.
+    </p>
+<pre><code class="language-toml">[tool.poetry.plugins."mlflow.run_context_provider"]
+ailine_correlation_id = "ailine.integrations.mlflow_plugin:AilineRunContextProvider"</code></pre>
+    <p>The provider is a no-op when <code>AILINE_CORRELATION_ID</code> is unset. When it is set,
+      it adds a single tag:</p>
+<pre><code class="language-text">ailine.correlation_id = &lt;uuid&gt;</code></pre>
+    <p>
+      Sequence per <code>ailine track</code> invocation:
+    </p>
+    <ol>
+      <li>Generate <code>uuid4().hex</code>.</li>
+      <li>Inject <code>AILINE_CORRELATION_ID</code> into the child env before <code>subprocess.run</code>.</li>
+      <li>Spawn a daemon thread that calls <code>MlflowClient.search_runs</code> with
+        <code>filter_string='tags."ailine.correlation_id" = "&lt;uuid&gt;"'</code> every
+        <code>track.mlflow.link_poll_seconds</code>.</li>
+      <li>On first match: <code>repository.set_mlflow_run(record_id, run_id)</code> with a
+        <code>WHERE mlflow_run IS NULL OR mlflow_run = ''</code> guard, then exit the thread.</li>
+      <li>On subprocess exit: signal the thread to stop, do one final retry, log a clear warning
+        if no match was ever found.</li>
+    </ol>
+    <p>
+      The <code>NULL</code>/empty guard prevents stomping a value the user's script may have
+      already supplied via <code>MLFLOW_RUN_ID</code>.
+    </p>
+  </section>
+
+  <section id="repro-scope" class="docs-section">
+    <h2>Reproducibility scope and non-goals</h2>
+    <p>
+      AIline is aimed at <strong>Python-centric ML</strong> projects. Per recorded run we persist
+      enough to argue the next execution can be brought as close as is reasonable to the recorded
+      one &mdash; not a hardware certification or a line-by-line audit of every third-party
+      library.
+    </p>
+
+    <h3>What we maximize</h3>
+    <ul>
+      <li>Pre-run worktree state (snapshot manifest + diff + per-file objects).</li>
+      <li>Exact <code>argv</code> and <code>cwd</code> for the child process.</li>
+      <li>Coarse environment: Python version, platform, lockfile fingerprint, configured package
+        versions.</li>
+      <li>DVC linkage where present (paths and hashes; you still own remotes and pulls).</li>
+      <li>MLflow run association for cross-checking metrics and artifacts.</li>
+    </ul>
+
+    <h3>What we explicitly do not guarantee</h3>
+    <ul>
+      <li>Bit-identical reruns of stochastic training (same seed never implies same weights across
+        GPUs / drivers / cuDNN / worker counts).</li>
+      <li>Files created only after the snapshot step (mid-run downloads, checkpoints written
+        during training).</li>
+      <li>Reads outside the worktree, or paths excluded by policy.</li>
+      <li>Hardware equivalence or per-file verification of vendored / compiled dependencies beyond
+        version metadata.</li>
+    </ul>
+
+    <p>
+      For stronger output parity, treat outputs as first-class artifacts (DVC <code>outs</code>,
+      MLflow logged files) &mdash; not as something implied by the pre-run snapshot alone.
+    </p>
+  </section>
+
+  <section id="releasing" class="docs-section">
+    <h2>Releasing</h2>
+    <p>
+      Versions come from Git tags via
+      <a href="https://github.com/mtkennerly/poetry-dynamic-versioning">poetry-dynamic-versioning</a>.
+      There is no manual <code>version = ...</code> bump in <code>pyproject.toml</code>; the tag
+      <em>is</em> the version. The configured tag pattern accepts <code>vX.Y.Z</code> and PEP 440
+      pre-releases (<code>vX.Y.Za1</code>, <code>vX.Y.Zb2</code>, <code>vX.Y.Zrc1</code>).
+    </p>
+    <p>One-time per developer machine:</p>
+<pre><code class="language-bash">poetry self add "poetry-dynamic-versioning[plugin]"</code></pre>
+    <p>Cut a release:</p>
+<pre><code class="language-bash">git tag v0.5.1
+git push origin v0.5.1</code></pre>
+    <p>
+      Pushing a <code>v*.*.*</code> tag triggers the GitHub Actions release workflow, which runs
+      tests, calls <code>poetry build</code>, attaches <code>dist/*.whl</code> and
+      <code>dist/*.tar.gz</code> to a GitHub Release, and publishes to TestPyPI.
+    </p>
+  </section>
+
+  <section id="demo-commands" class="docs-section">
+    <h2>Demo commands</h2>
+    <p>
+      AIline ships three commands behind explicit <code>*-demo</code> names for the original
+      tutorial flow. They clone a sample repo into <code>./repo</code> and pretend-train. They
+      are <strong>not</strong> recommended for real projects &mdash; use
+      <a href="/ailine/docs/cli-reference#cmd-track"><code>ailine track</code></a> instead.
+    </p>
+<pre><code class="language-bash">ailine init-demo &lt;git_repo_url&gt;     # clone into ./repo
+ailine run --script train.py        # demo: wraps in MLflow, records a snapshot
+ailine reset-demo                   # remove ./repo, the DB, and mlruns/</code></pre>
+  </section>
+</article>
