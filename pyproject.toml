@@ -5,12 +5,29 @@ name = "ailine"
 version = "0.0.0"
 description = "ML experiment lineage tracker with snapshot-based reproducibility."
 authors = ["Igor Zaton"]
+license = "MIT"
 readme = "README.md"
+homepage = "https://github.com/IgorZaton/ailine"
+repository = "https://github.com/IgorZaton/ailine"
+documentation = "https://github.com/IgorZaton/ailine"
+keywords = ["mlops", "experiment-tracking", "lineage", "mlflow", "dvc", "reproducibility"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Version Control",
+]
 packages = [{ include = "ailine" }]
 include = [
     { path = "ailine/web/templates/*.html", format = ["sdist", "wheel"] },
     { path = "ailine/web/static/*", format = ["sdist", "wheel"] },
     { path = "ailine/naming/data/*.txt", format = ["sdist", "wheel"] },
+    { path = "LICENSE", format = ["sdist", "wheel"] },
 ]
 
 [tool.poetry.dependencies]

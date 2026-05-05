@@ -10,8 +10,10 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Build sdist + wheel and publish GitHub Release
+    name: Build, publish to TestPyPI, attach to GitHub Release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
 
     steps:
       - name: Checkout (with full history so the tag is visible)
@@ -42,6 +44,31 @@ jobs:
       - name: Show built artifacts
         run: ls -la dist/
 
+      - name: Compute PEP 440 version from tag
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          echo "value=${version}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: ${version}"
+
+      - name: Fail fast if TestPyPI token is missing
+        env:
+          TEST_PYPI_API_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          if [ -z "${TEST_PYPI_API_TOKEN}" ]; then
+            echo "::error::Repository secret TEST_PYPI_API_TOKEN is not set; cannot publish to TestPyPI."
+            exit 1
+          fi
+
+      - name: Configure Poetry for TestPyPI
+        run: poetry config repositories.testpypi https://test.pypi.org/legacy/
+
+      - name: Publish to TestPyPI
+        env:
+          TEST_PYPI_API_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: poetry publish -r testpypi -u __token__ -p "${TEST_PYPI_API_TOKEN}" --no-interaction
+
       - name: Publish GitHub Release with artifacts
         uses: softprops/action-gh-release@v2
         with:
@@ -49,3 +76,47 @@ jobs:
           generate_release_notes: true
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
+
+  smoke-install-from-testpypi:
+    name: Smoke install from TestPyPI
+    needs: build-and-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Wait for TestPyPI propagation
+        run: sleep 30
+
+      - name: Install ailine from TestPyPI in a fresh venv
+        env:
+          AILINE_VERSION: ${{ needs.build-and-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/ailine-smoke
+          # shellcheck disable=SC1091
+          source /tmp/ailine-smoke/bin/activate
+          python -m pip install -U pip
+          for attempt in 1 2 3 4 5; do
+            if pip install \
+                --index-url https://test.pypi.org/simple/ \
+                --extra-index-url https://pypi.org/simple \
+                "ailine==${AILINE_VERSION}"; then
+              echo "Install succeeded on attempt ${attempt}"
+              break
+            fi
+            echo "Install attempt ${attempt} failed; sleeping before retry"
+            sleep 30
+          done
+          pip show ailine
+
+      - name: Verify CLI entrypoints
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source /tmp/ailine-smoke/bin/activate
+          ailine --help
+          ailine doctor --help
