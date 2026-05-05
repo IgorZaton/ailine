@@ -40,9 +40,11 @@ def _resolve_mlflow_ui_base() -> str:
 
 MLFLOW_UI_BASE = _resolve_mlflow_ui_base()
 LOG_PATH = os.environ.get("AILINE_LOG_PATH", "ailine.log")
-DEFAULT_STORAGE_DIR = os.environ.get("AILINE_STORAGE_DIR", os.path.abspath("snapshots"))
 POLICY_PATH = os.environ.get("AILINE_POLICY_PATH", ".ailine.yml")
 STATE_DIR = os.environ.get("AILINE_STATE_DIR", ".ailine")
+DEFAULT_STORAGE_DIR = os.environ.get(
+    "AILINE_STORAGE_DIR", os.path.abspath(os.path.join(STATE_DIR, "snapshots"))
+)
 LARGE_FILE_POLICY_STORE = os.path.join(STATE_DIR, "large-file-policy.json")
 OBJECT_STORE_DIR = os.path.join(STATE_DIR, "objects")
 POINTER_STORE_DIR = os.path.join(STATE_DIR, "pointers")

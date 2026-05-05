@@ -16,7 +16,11 @@ from ailine.persistence.db import init_db
 
 
 def _bootstrap_repo(
-    tmp: str, *, mlflow_mode: str | None = None, repo_name: str = "repo"
+    tmp: str,
+    *,
+    mlflow_mode: str | None = None,
+    repo_name: str = "repo",
+    storage_dir: str | None = ".ailine/snapshots",
 ) -> str:
     repo = os.path.join(tmp, repo_name)
     os.makedirs(repo)
@@ -28,6 +32,8 @@ def _bootstrap_repo(
     cfg_lines = ["project:\n", "  version: 1\n", "  mode: track\n"]
     if mlflow_mode is not None:
         cfg_lines.extend(["track:\n", "  mlflow:\n", f"    mode: {mlflow_mode}\n"])
+    if storage_dir is not None:
+        cfg_lines.extend(["snapshot:\n", f"  storage_dir: {storage_dir}\n"])
     with open(os.path.join(repo, ".ailine.yml"), "w") as f:
         f.writelines(cfg_lines)
     subprocess.run(["git", "-C", repo, "add", "."], check=True)
@@ -56,31 +62,33 @@ class TrackCommandTests(unittest.TestCase):
 
     def test_track_runs_and_propagates_zero_exit(self):
         runner = CliRunner()
-        storage = os.path.join(self.tmp.name, "snapshots")
         result = runner.invoke(
             track_command,
-            ["--storage", storage, "--config", self.cfg_path,
-             "--", sys.executable, "-c", "print('hello')"],
+            ["--config", self.cfg_path, "--", sys.executable, "-c", "print('hello')"],
         )
         self.assertEqual(result.exit_code, 0, msg=result.output)
 
     def test_track_propagates_nonzero_exit(self):
         runner = CliRunner()
-        storage = os.path.join(self.tmp.name, "snapshots")
         result = runner.invoke(
             track_command,
-            ["--storage", storage, "--config", self.cfg_path,
-             "--", sys.executable, "-c", "import sys; sys.exit(3)"],
+            [
+                "--config",
+                self.cfg_path,
+                "--",
+                sys.executable,
+                "-c",
+                "import sys; sys.exit(3)",
+            ],
         )
         self.assertEqual(result.exit_code, 3)
 
     def test_track_fails_when_no_config(self):
         runner = CliRunner()
         os.remove(self.cfg_path)
-        storage = os.path.join(self.tmp.name, "snapshots")
         result = runner.invoke(
             track_command,
-            ["--storage", storage, "--", sys.executable, "-c", "print(1)"],
+            ["--", sys.executable, "-c", "print(1)"],
         )
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("No .ailine.yml", result.output)
@@ -90,15 +98,65 @@ class TrackCommandTests(unittest.TestCase):
         result = runner.invoke(track_command, [])
         self.assertNotEqual(result.exit_code, 0)
 
+    def test_track_storage_flag_no_longer_track_option(self):
+        # ``--storage`` is no longer a track option; with ignore_unknown_options
+        # it falls through to argv. Either the subprocess fails because
+        # ``--storage`` is not a real program, or click emits a non-zero exit.
+        runner = CliRunner()
+        result = runner.invoke(
+            track_command,
+            [
+                "--config",
+                self.cfg_path,
+                "--",
+                "--storage",
+                "/tmp/whatever",
+                sys.executable,
+                "-c",
+                "print(0)",
+            ],
+        )
+        self.assertNotEqual(result.exit_code, 0)
+
+    def _make_repo_dirty(self):
+        with open(os.path.join(self.repo, "uncommitted.txt"), "w") as f:
+            f.write("dirty\n")
+
+    def test_track_storage_dir_from_yaml(self):
+        self._make_repo_dirty()
+        runner = CliRunner()
+        result = runner.invoke(
+            track_command,
+            ["--config", self.cfg_path, "--", sys.executable, "-c", "print(0)"],
+        )
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        expected = os.path.join(self.repo, ".ailine", "snapshots")
+        self.assertTrue(
+            os.path.isdir(expected),
+            msg=f"expected snapshots dir {expected} to exist",
+        )
+
+    def test_track_env_override_beats_yaml_storage_dir(self):
+        self._make_repo_dirty()
+        runner = CliRunner()
+        env_storage = os.path.join(self.tmp.name, "env-snapshots")
+        result = runner.invoke(
+            track_command,
+            ["--config", self.cfg_path, "--", sys.executable, "-c", "print(0)"],
+            env={"AILINE_STORAGE_DIR": env_storage},
+        )
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        self.assertTrue(
+            os.path.isdir(env_storage),
+            msg=f"AILINE_STORAGE_DIR={env_storage} must win over yaml",
+        )
+
     def test_track_custom_name_persisted(self):
         runner = CliRunner()
-        storage = os.path.join(self.tmp.name, "snapshots2")
         label = "my-baseline-v2"
         result = runner.invoke(
             track_command,
             [
-                "--storage",
-                storage,
                 "--config",
                 self.cfg_path,
                 "--name",
@@ -119,10 +177,9 @@ class TrackCommandTests(unittest.TestCase):
 
     def test_track_preview_stderr_shows_name(self):
         runner = CliRunner()
-        storage = os.path.join(self.tmp.name, "snapshots-prev")
         result = runner.invoke(
             track_command,
-            ["--storage", storage, "--config", self.cfg_path, "--", sys.executable, "-c", "print(0)"],
+            ["--config", self.cfg_path, "--", sys.executable, "-c", "print(0)"],
         )
         self.assertEqual(result.exit_code, 0, msg=result.output)
         out = result.output
@@ -137,7 +194,6 @@ class TrackCommandTests(unittest.TestCase):
         try:
             runner = CliRunner()
             cfg = os.path.join(wrap_repo, ".ailine.yml")
-            storage = os.path.join(self.tmp.name, "snapshots-wrap")
             with patch("ailine.run.session.mlflow.start_run") as start_run, patch(
                 "ailine.run.session.mlflow.active_run"
             ) as active_run:
@@ -148,8 +204,6 @@ class TrackCommandTests(unittest.TestCase):
                 result = runner.invoke(
                     track_command,
                     [
-                        "--storage",
-                        storage,
                         "--config",
                         cfg,
                         "--name",

@@ -44,6 +44,10 @@ track:
     verify_commands: []
 
 snapshot:
+  # Where snapshot bundles + content-addressed objects are written. Relative
+  # values are resolved against the repo root. Default (when omitted): the
+  # value of AILINE_STORAGE_DIR or ./.ailine/snapshots.
+  storage_dir: .ailine/snapshots
   exclude_globs:
     - ".git/**"
     - ".dvc/cache/**"
@@ -112,7 +116,10 @@ def init_demo_command(repo_url: str):
     click.echo(f"Initialized AIline demo with {repo_url} in {constants.REPO_DIR}")
 
 
-@click.command("reset-demo", help="Remove demo artifacts (./repo, DB, mlruns/, snapshots/).")
+@click.command(
+    "reset-demo",
+    help="Remove demo artifacts (./repo, DB, mlruns/, .ailine/snapshots/).",
+)
 def reset_demo_command():
     items_to_remove = [
         constants.MLFLOW_STORAGE_DIR,

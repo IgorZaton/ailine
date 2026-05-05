@@ -16,13 +16,13 @@ import sys
 
 import click
 
-from ailine.config import constants
 from ailine.config.validate import (
     ConfigValidationError,
     validate_config,
 )
 from ailine.integrations.git_root import origin_url, resolve_git_root
 from ailine.run.session import SessionError, run_tracked_command
+from ailine.snapshot.storage import resolve_storage_dir
 
 
 @click.command(
@@ -32,12 +32,6 @@ from ailine.run.session import SessionError, run_tracked_command
         "Run a command under AIline tracking. Use '--' to separate ailine flags from "
         "the command, e.g.  ailine track -- python train.py --epochs 5"
     ),
-)
-@click.option(
-    "--storage",
-    default=constants.DEFAULT_STORAGE_DIR,
-    show_default=True,
-    help="Directory where snapshot bundles are written.",
 )
 @click.option(
     "--config",
@@ -66,7 +60,7 @@ from ailine.run.session import SessionError, run_tracked_command
     ),
 )
 @click.argument("argv", nargs=-1, type=click.UNPROCESSED, required=True)
-def track_command(storage: str, config_path: str, run_name: str, record_label, argv: tuple):
+def track_command(config_path: str, run_name: str, record_label, argv: tuple):
     if not argv:
         raise click.UsageError("Provide a command to run after '--'.")
 
@@ -88,6 +82,8 @@ def track_command(storage: str, config_path: str, run_name: str, record_label, a
         git_root = resolve_git_root(os.getcwd(), config.track["repo_root"])
     except FileNotFoundError as exc:
         raise click.ClickException(str(exc)) from exc
+
+    storage = resolve_storage_dir(config.snapshot, git_root)
 
     def _preview_labels(rec: str, mlf: str) -> None:
         mode = config.track["mlflow"]["mode"]

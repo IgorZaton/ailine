@@ -95,6 +95,22 @@ class ValidateConfigTests(unittest.TestCase):
         with self.assertRaises(ConfigValidationError):
             validate_config(path)
 
+    def test_snapshot_storage_dir_accepts_string(self):
+        path = self._write("snapshot:\n  storage_dir: .ailine/snapshots\n")
+        result = validate_config(path)
+        self.assertEqual(result.snapshot["storage_dir"], ".ailine/snapshots")
+
+    def test_snapshot_storage_dir_accepts_null_default(self):
+        path = self._write("snapshot:\n  large_file_mode: prompt\n")
+        result = validate_config(path)
+        self.assertIsNone(result.snapshot["storage_dir"])
+
+    def test_snapshot_storage_dir_rejects_non_string(self):
+        path = self._write("snapshot:\n  storage_dir: 123\n")
+        with self.assertRaises(ConfigValidationError) as ctx:
+            validate_config(path)
+        self.assertIn("snapshot.storage_dir", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
