@@ -13,6 +13,7 @@ from ailine.config import constants
 from ailine.config.validate import validate_config
 from ailine.persistence.db import init_db
 from ailine.run.session import SessionError, run_tracked_command
+from ailine.snapshot.storage import resolve_storage_dir
 
 
 def _bootstrap_repo(tmp: str) -> str:
@@ -106,8 +107,70 @@ class TrackedCommandTests(unittest.TestCase):
             config=self.config,
         )
         self.assertEqual(result.commit_type, "snapshot")
-        self.assertTrue(result.snapshot_path)
-        self.assertTrue(os.path.exists(result.snapshot_path))
+        # objects-v1 snapshots intentionally do not produce a tar.zst payload.
+        self.assertIsNone(result.snapshot_path)
+
+        snap_id = result.commit_id
+        manifest_file = os.path.join(self.storage, f"{snap_id}.manifest.json")
+        metadata_file = os.path.join(self.storage, f"{snap_id}.metadata.json")
+        diff_file = os.path.join(self.storage, f"{snap_id}.diff.patch")
+        self.assertTrue(os.path.exists(manifest_file), msg=manifest_file)
+        self.assertTrue(os.path.exists(metadata_file), msg=metadata_file)
+        self.assertTrue(os.path.exists(diff_file), msg=diff_file)
+
+        with open(metadata_file, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        self.assertEqual(meta["format"], "objects-v1")
+        self.assertIsNone(meta["archive_path"])
+
+        objects_root = os.path.join(self.storage, "objects")
+        self.assertTrue(os.path.isdir(objects_root))
+        stored = []
+        for shard in os.listdir(objects_root):
+            for name in os.listdir(os.path.join(objects_root, shard)):
+                stored.append(name)
+        self.assertGreaterEqual(len(stored), 1)
+
+    def test_dirty_tree_dedups_objects_across_runs(self):
+        with open(os.path.join(self.repo, "shared.txt"), "w") as f:
+            f.write("shared content\n")
+
+        run_tracked_command(
+            git_root=self.repo,
+            argv=[sys.executable, "-c", "print(1)"],
+            storage=self.storage,
+            config=self.config,
+        )
+
+        objects_root = os.path.join(self.storage, "objects")
+        first_count = sum(
+            len(os.listdir(os.path.join(objects_root, shard)))
+            for shard in os.listdir(objects_root)
+        )
+        self.assertGreater(first_count, 0)
+
+        # Add a second untracked file but keep ``shared.txt`` byte-identical.
+        with open(os.path.join(self.repo, "second.txt"), "w") as f:
+            f.write("only in second snapshot\n")
+
+        run_tracked_command(
+            git_root=self.repo,
+            argv=[sys.executable, "-c", "print(2)"],
+            storage=self.storage,
+            config=self.config,
+        )
+
+        second_count = sum(
+            len(os.listdir(os.path.join(objects_root, shard)))
+            for shard in os.listdir(objects_root)
+        )
+        # The second snapshot only adds ``second.txt``; every other included
+        # file was byte-identical and must be deduped against the first run.
+        self.assertEqual(
+            second_count,
+            first_count + 1,
+            msg=f"expected exactly +1 object after second run (first={first_count}, second={second_count})",
+        )
 
     def test_inherit_mode_does_not_open_outer_mlflow_run(self):
         with patch("ailine.run.session.mlflow.start_run") as start_run, patch(
@@ -291,6 +354,28 @@ class TrackedCommandTests(unittest.TestCase):
                 storage=self.storage,
                 config=self.config,
             )
+
+    def test_resolved_storage_dir_from_yaml_is_used(self):
+        rel_path = "custom-snaps"
+        cfg = validate_config(self.cfg_path)
+        cfg.snapshot["storage_dir"] = rel_path
+        with open(os.path.join(self.repo, "uncommitted.txt"), "w") as f:
+            f.write("dirty\n")
+
+        resolved = resolve_storage_dir(cfg.snapshot, self.repo)
+        self.assertEqual(resolved, os.path.join(self.repo, rel_path))
+
+        result = run_tracked_command(
+            git_root=self.repo,
+            argv=[sys.executable, "-c", "print(0)"],
+            storage=resolved,
+            config=cfg,
+        )
+        self.assertEqual(result.commit_type, "snapshot")
+        self.assertTrue(
+            os.path.isdir(os.path.join(resolved, "objects")),
+            msg=f"objects dir missing under {resolved}",
+        )
 
     def test_non_executable_py_script_raises_session_error_with_hint(self):
         script_path = os.path.join(self.repo, "side.py")
