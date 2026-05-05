@@ -51,6 +51,7 @@ ailine reset-demo                   # remove ./repo, DB, mlruns/
 | `ailine init-workspace [--force]` | Bootstrap the pip-install workflow: write a default `.ailine.yml` and ensure state directories. No clone. |
 | `ailine doctor [--json] [--strict] [--config PATH]` | Validate `.ailine.yml` and the local environment. The single source of truth for "is my setup OK". |
 | `ailine track [--config PATH] [--run-name NAME] [--name NAME] -- <argv...>` | Run a command under AIline tracking. The argv after `--` is executed verbatim from the repo root. Snapshot location is configured via `snapshot.storage_dir` in `.ailine.yml` (or `AILINE_STORAGE_DIR`). |
+| `ailine restore <snapshot_id> [--config PATH] [--dry-run] [--force]` | Restore the worktree to the exact state captured by `<snapshot_id>` (strict sync: extra files in scope are removed; `.git` and `.ailine` are always preserved). Aborts on a dirty worktree unless `--force`; `--dry-run` previews the write/delete plan without touching the filesystem. |
 | `ailine status [--verbose]` | List recorded runs: default output includes **full** `record_id` and `parent` lines (copy/paste for restore); `--verbose` dumps all fields. Errors clearly when the DB does not exist yet. |
 | `ailine serve` | Start the MLflow UI subprocess and the Flask app together (ports 5001 and 5000). |
 | `ailine init-demo <repo_url>` | Clone a sample repo into `./repo` and persist the URL in `ailine_config.txt` (tutorial flow). |
