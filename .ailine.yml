@@ -23,6 +23,7 @@ snapshot:
     - ".mypy_cache/**"
     - "mlruns/**"
     - ".ailine/**"
+    - ".cursor/**"
   large_file_mb: 50
   large_file_mode: prompt
   dvc_pointer_patterns:

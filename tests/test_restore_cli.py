@@ -167,17 +167,11 @@ class RestoreCommandTests(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0, msg=result.output)
 
-    def test_dirty_excluded_paths_do_not_block_without_force(self):
+    def test_dirty_ignored_paths_do_not_block_without_force(self):
         snap_id = self._take_snapshot()
         self._commit_clean()
-        # Use a dedicated config file so the repo itself stays clean except .cursor.
-        cfg_with_excludes = os.path.join(self.tmp.name, "restore-config.yml")
-        with open(self.cfg_path, "r", encoding="utf-8") as src, open(
-            cfg_with_excludes, "w", encoding="utf-8"
-        ) as f:
-            f.write(src.read())
-            f.write("  exclude_globs:\n")
-            f.write("    - .cursor/**\n")
+        # `.cursor/` is an AIline default-ignore; a dirty file there must not
+        # block restore (snapshot scan would not have captured it either).
         os.makedirs(os.path.join(self.repo, ".cursor", "rules"), exist_ok=True)
         with open(os.path.join(self.repo, ".cursor", "rules", "tmp.mdc"), "w") as f:
             f.write("local-only\n")
@@ -185,7 +179,7 @@ class RestoreCommandTests(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(
             restore_command,
-            ["--config", cfg_with_excludes, "--dry-run", snap_id],
+            ["--config", self.cfg_path, "--dry-run", snap_id],
         )
         self.assertEqual(result.exit_code, 0, msg=result.output)
         self.assertTrue(

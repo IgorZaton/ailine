@@ -154,11 +154,12 @@ def _validate_track(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _validate_snapshot(raw: Dict[str, Any]) -> Dict[str, Any]:
+    if "exclude_globs" in raw:
+        raise ConfigValidationError(
+            "snapshot.exclude_globs is no longer supported. Move your patterns "
+            "into .ailineignore (gitignore syntax). See docs/track-contract.md."
+        )
     cfg = _merge_defaults(DEFAULT_SNAPSHOT_POLICY, raw)
-    if not isinstance(cfg["exclude_globs"], list) or not all(
-        isinstance(g, str) for g in cfg["exclude_globs"]
-    ):
-        raise ConfigValidationError("snapshot.exclude_globs must be a list of strings.")
     if not isinstance(cfg["large_file_mb"], (int, float)) or cfg["large_file_mb"] <= 0:
         raise ConfigValidationError("snapshot.large_file_mb must be a positive number.")
     if cfg["large_file_mode"] not in {"prompt", "skip", "include"}:

@@ -66,13 +66,8 @@ track:
 snapshot:
   storage_dir: .ailine/snapshots   # relative paths resolved against the repo root;
                                    # overridden by AILINE_STORAGE_DIR
-  exclude_globs:            # gitignore-style globs, applied to repo files
-    - ".git/**"
-    - ".venv/**"
-    - "__pycache__/**"
-    - "*.pyc"
-    - "mlruns/**"
-    - ".ailine/**"
+  # Snapshot ignore patterns live in `.ailineignore` (gitignore syntax) at
+  # the repo root. `exclude_globs` here is rejected with a migration error.
   large_file_mb: 50         # files at or above this size go through large-file policy
   large_file_mode: prompt   # prompt | skip | include
   dvc_pointer_patterns:
@@ -125,6 +120,36 @@ track:
     verify_commands:
       - ["dvc", "status", "--quiet"]
 ```
+
+## `.ailineignore`
+
+Snapshot ignore patterns live in a top-level `.ailineignore` file with full
+[gitignore](https://git-scm.com/docs/gitignore) syntax (parsed via
+`pathspec`). The same `PathSpec` is consulted by:
+
+- **snapshot scan** — ignored paths are not stored in the snapshot manifest
+  or object store;
+- **`ailine restore`** — ignored paths are preserved on disk during the
+  strict-sync (a dirty `.cursor/foo.json` will not block restore, and is
+  not deleted to make the worktree match the snapshot).
+
+A built-in default ignore set is **always active** even when
+`.ailineignore` is missing. It covers the common AIline-internal,
+Python-build, virtualenv, lint/test cache, IDE/AI-assistant scratch,
+ML-experiment (`mlruns/`, `wandb/`, `lightning_logs/`, ...), and DVC
+internal directories. `ailine init-workspace` and `ailine init-demo`
+seed a fully populated `.ailineignore` so users see (and can edit) the
+defaults; with `--force` they overwrite any existing file.
+
+Use `!pattern` to negate a default — for example to keep `dist/keep.txt`
+while still ignoring the rest of `dist/`:
+
+```gitignore
+!dist/keep.txt
+```
+
+`snapshot.exclude_globs` in `.ailine.yml` is no longer supported and is
+rejected with a migration error.
 
 ## Reproducibility per run
 

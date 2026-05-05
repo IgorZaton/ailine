@@ -38,7 +38,12 @@ def init_state_dirs() -> None:
 def load_snapshot_policy() -> dict:
     policy = dict(DEFAULT_SNAPSHOT_POLICY)
     snapshot_cfg = _read_policy_file().get("snapshot", {})
-    policy["exclude_globs"] = snapshot_cfg.get("exclude_globs", policy["exclude_globs"])
+    if "exclude_globs" in snapshot_cfg:
+        raise click.ClickException(
+            f"snapshot.exclude_globs in {constants.POLICY_PATH} is no longer supported. "
+            "Move your patterns into .ailineignore (gitignore syntax). "
+            "See docs/track-contract.md."
+        )
     policy["large_file_mb"] = snapshot_cfg.get("large_file_mb", policy["large_file_mb"])
     policy["large_file_mode"] = snapshot_cfg.get("large_file_mode", policy["large_file_mode"])
     policy["dvc_pointer_patterns"] = snapshot_cfg.get(

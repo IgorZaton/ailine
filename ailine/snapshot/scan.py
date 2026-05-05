@@ -16,8 +16,8 @@ from ailine.config.loader import (
     load_decision_store,
     save_decision_store,
 )
+from ailine.snapshot.ignore import is_ignored, load_ignore_spec
 from ailine.snapshot.paths import (
-    is_excluded,
     normalize_rel_path,
     sha256_file,
 )
@@ -47,7 +47,17 @@ def discover_dvc_tracked_paths(repo_path: str, dvc_patterns: List[str]) -> set:
     return tracked
 
 
-def scan_repo_files(repo_path: str, policy: dict) -> List[dict]:
+def scan_repo_files(repo_path: str, policy: dict, ignore_spec=None) -> List[dict]:
+    """Walk ``repo_path`` and return scan entries for each non-ignored file.
+
+    ``ignore_spec`` is the active ``PathSpec`` for ``.ailineignore``; when
+    ``None`` it is loaded from the repo root, so existing call sites stay
+    a one-liner. Pass an explicit spec from tests or from callers that
+    have already loaded one (snapshot orchestration, restore preflight).
+    """
+    if ignore_spec is None:
+        ignore_spec = load_ignore_spec(repo_path)
+
     large_limit = int(policy["large_file_mb"] * 1024 * 1024)
     dvc_tracked = discover_dvc_tracked_paths(repo_path, policy["dvc_pointer_patterns"])
     entries: List[dict] = []
@@ -56,7 +66,7 @@ def scan_repo_files(repo_path: str, policy: dict) -> List[dict]:
         for filename in files:
             full_path = os.path.abspath(os.path.join(root, filename))
             rel_path = normalize_rel_path(os.path.relpath(full_path, repo_path))
-            if is_excluded(rel_path, policy["exclude_globs"]):
+            if is_ignored(rel_path, ignore_spec):
                 continue
 
             file_size = os.path.getsize(full_path)
