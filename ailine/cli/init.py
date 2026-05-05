@@ -9,9 +9,6 @@ Two distinct lifecycles live under one module:
   repo into ``./repo`` and persists the URL in ``ailine_config.txt``.
 * ``reset-demo`` — narrow counterpart of ``init-demo``. Removes ONLY the
   artifacts created by the demo flow.
-
-For backward compatibility, ``init`` and ``cleanup`` remain as deprecated
-aliases that print a deprecation warning and forward to the demo commands.
 """
 
 from __future__ import annotations
@@ -165,25 +162,3 @@ def reset_demo_command():
     set_repo_url(None)
     logging.info("reset-demo complete")
     click.echo("reset-demo complete. Run 'ailine init-demo <repo_url>' to start fresh.")
-
-
-@click.command("init", help="(deprecated) alias for `init-demo`.")
-@click.argument("repo_url")
-@click.pass_context
-def deprecated_init_command(ctx: click.Context, repo_url: str):
-    click.echo(
-        "warning: `ailine init` is deprecated; use `ailine init-demo` (legacy clone) "
-        "or `ailine init-workspace` (pip-install workflow).",
-        err=True,
-    )
-    ctx.invoke(init_demo_command, repo_url=repo_url)
-
-
-@click.command("cleanup", help="(deprecated) alias for `reset-demo`.")
-@click.pass_context
-def deprecated_cleanup_command(ctx: click.Context):
-    click.echo(
-        "warning: `ailine cleanup` is deprecated; use `ailine reset-demo`.",
-        err=True,
-    )
-    ctx.invoke(reset_demo_command)
