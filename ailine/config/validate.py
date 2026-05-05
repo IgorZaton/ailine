@@ -21,6 +21,7 @@ import yaml
 
 from ailine.config import constants
 from ailine.config.defaults import (
+    DEFAULT_CLEANUP_CONFIG,
     DEFAULT_DVC_CONFIG,
     DEFAULT_ENVIRONMENT_CONFIG,
     DEFAULT_PROJECT_CONFIG,
@@ -43,6 +44,7 @@ KNOWN_TOP_LEVEL_KEYS = {
     "dvc",
     "environment",
     "run_capture",
+    "cleanup",
 }
 
 
@@ -58,6 +60,7 @@ class ValidatedConfig:
     dvc: Dict[str, Any]
     environment: Dict[str, Any]
     run_capture: Dict[str, Any]
+    cleanup: Dict[str, Any]
     warnings: List[str] = field(default_factory=list)
 
 
@@ -230,6 +233,20 @@ def _validate_run_capture(raw: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
+def _validate_cleanup(raw: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise ConfigValidationError("cleanup must be a YAML mapping.")
+    cfg = _merge_defaults(DEFAULT_CLEANUP_CONFIG, raw)
+    remove_cfg = cfg.get("remove")
+    if not isinstance(remove_cfg, dict):
+        raise ConfigValidationError("cleanup.remove must be a YAML mapping.")
+    if not isinstance(remove_cfg.get("with_mlflow", False), bool):
+        raise ConfigValidationError(
+            "cleanup.remove.with_mlflow must be true/false."
+        )
+    return cfg
+
+
 def validate_config(config_path: Optional[str] = None) -> ValidatedConfig:
     """Parse, schema-check, and merge defaults for ``.ailine.yml``.
 
@@ -259,5 +276,6 @@ def validate_config(config_path: Optional[str] = None) -> ValidatedConfig:
         dvc=_validate_dvc(raw.get("dvc") or {}),
         environment=_validate_environment(raw.get("environment") or {}),
         run_capture=_validate_run_capture(raw.get("run_capture") or {}),
+        cleanup=_validate_cleanup(raw.get("cleanup") or {}),
         warnings=warnings,
     )

@@ -94,6 +94,10 @@ environment:
 
 run_capture:
   enabled: true             # persist full argv + cwd + timestamp per run
+
+cleanup:
+  remove:
+    with_mlflow: false      # default for `ailine remove`; CLI flag overrides
 ```
 
 ### `track.mlflow.mode`
@@ -148,6 +152,23 @@ track:
     verify_commands:
       - ["dvc", "status", "--quiet"]
 ```
+
+### `cleanup.remove.with_mlflow`
+
+Default for `ailine remove <id>`. When `true`, the linked MLflow run (if
+any) is also deleted via `MlflowClient.delete_run` after the local cleanup
+finishes. When `false` (the default), AIline only touches its own data.
+
+Resolution order, highest to lowest:
+
+1. Explicit CLI value: `ailine remove <id> --with-mlflow true|false`.
+2. `cleanup.remove.with_mlflow` from `.ailine.yml`.
+3. Built-in default `false`.
+
+`ailine purge` is intentionally not configurable through `.ailine.yml`: it
+always asks `Confirm? [y/N]` interactively before deleting (use
+`--dry-run` to preview without prompting). Both commands respect
+`--config PATH` for ad-hoc test environments.
 
 ## `.ailineignore`
 

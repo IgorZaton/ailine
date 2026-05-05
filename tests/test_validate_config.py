@@ -121,6 +121,22 @@ class ValidateConfigTests(unittest.TestCase):
         self.assertIn("exclude_globs", msg)
         self.assertIn(".ailineignore", msg)
 
+    def test_cleanup_default_when_section_missing(self):
+        path = self._write("project:\n  version: 1\n")
+        result = validate_config(path)
+        self.assertEqual(result.cleanup["remove"]["with_mlflow"], False)
+
+    def test_cleanup_remove_with_mlflow_accepts_bool(self):
+        path = self._write("cleanup:\n  remove:\n    with_mlflow: true\n")
+        result = validate_config(path)
+        self.assertTrue(result.cleanup["remove"]["with_mlflow"])
+
+    def test_cleanup_remove_with_mlflow_rejects_non_bool(self):
+        path = self._write('cleanup:\n  remove:\n    with_mlflow: "yes"\n')
+        with self.assertRaises(ConfigValidationError) as ctx:
+            validate_config(path)
+        self.assertIn("cleanup.remove.with_mlflow", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

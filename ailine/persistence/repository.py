@@ -5,6 +5,7 @@ dicts and dataclass-like records.
 """
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from typing import List, Optional
@@ -353,6 +354,39 @@ def fetch_snapshot_restore_row(
     }
 
 
+def fetch_record_for_remove(
+    record_id: str, db_path: Optional[str] = None
+) -> Optional[dict]:
+    """Fetch the minimal columns ``ailine remove`` needs to clean up a row.
+
+    Returns ``None`` when the row does not exist. Works for both ``git`` and
+    ``snapshot`` rows; the on-disk artifact paths are only populated for
+    snapshot rows in practice.
+    """
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, type, mlflow_run, manifest_path, metadata_path, "
+            "diff_path, record_name FROM tree WHERE id = ?",
+            (record_id,),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "type": row[1],
+        "mlflow_run": row[2],
+        "manifest_path": row[3],
+        "metadata_path": row[4],
+        "diff_path": row[5],
+        "record_name": row[6],
+    }
+
+
 def fetch_all_snapshot_locations(db_path: Optional[str] = None) -> List[dict]:
     """Return on-disk locations for every snapshot row.
 
@@ -380,6 +414,21 @@ def fetch_all_snapshot_locations(db_path: Optional[str] = None) -> List[dict]:
         }
         for r in rows
     ]
+
+
+def count_rows(db_path: Optional[str] = None) -> int:
+    """Return the number of rows in ``tree`` (used by ``ailine purge`` summary)."""
+    if db_path is None:
+        db_path = constants.DB_PATH
+    if not os.path.exists(db_path):
+        return 0
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM tree")
+        return int(cur.fetchone()[0])
+    finally:
+        conn.close()
 
 
 def delete_run(run_id: str, db_path: Optional[str] = None) -> None:

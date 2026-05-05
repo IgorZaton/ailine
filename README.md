@@ -66,6 +66,8 @@ ailine reset-demo                   # remove ./repo, DB, mlruns/
 | `ailine restore <snapshot_id> [--config PATH] [--dry-run] [--force]` | Restore the worktree to the exact state captured by `<snapshot_id>` (strict sync: extra files in scope are removed; `.git` and `.ailine` are always preserved). Aborts on a dirty worktree unless `--force`; `--dry-run` previews the write/delete plan without touching the filesystem. |
 | `ailine status [--verbose]` | List recorded runs: default output includes **full** `record_id` and `parent` lines (copy/paste for restore); `--verbose` dumps all fields. Errors clearly when the DB does not exist yet. |
 | `ailine serve` | Start the MLflow UI subprocess and the Flask app together (ports 5001 and 5000). |
+| `ailine remove <id> [--with-mlflow true\|false] [--dry-run] [--config PATH]` | Delete one lineage record and its on-disk fan-out (manifest, metadata, diff, plus content-addressed objects only this row owned). `--with-mlflow` overrides `cleanup.remove.with_mlflow` from `.ailine.yml` (default `false`). `--dry-run` prints the plan without changes. |
+| `ailine purge [--dry-run] [--config PATH]` | Remove **all** AIline state and workspace config from the project: `.ailine/`, `.ailine.yml`, `.ailineignore`, plus any non-default snapshot `storage_dir` configured outside `.ailine/`. Leaves `mlruns/` and `repo/` untouched. Asks `Confirm? [y/N]` before deleting; `--dry-run` skips the prompt and prints the plan only. |
 | `ailine init-demo <repo_url>` | Clone a sample repo into `./repo` and persist the URL in `ailine_config.txt` (tutorial flow). |
 | `ailine run --script <s> [--dataset <d>] [--dvc-add] [--name NAME]` | Demo wrapper around `track` that hard-codes `./repo` and forces `mlflow.mode=wrap`. |
 | `ailine reset-demo` | Delete demo artifacts (`./repo`, DB, `mlruns/`, default snapshot dir, `temp_*`). |
@@ -125,6 +127,36 @@ older checkout AIline transparently moves any legacy root-level artifacts
   guarantees and the full `.ailine.yml` schema.
 - [docs/repro-contract.md](docs/repro-contract.md) — the snapshot
   reproducibility guarantees AIline aims to provide.
+
+### Cleanup commands
+
+`ailine remove <id>` deletes one lineage record and its on-disk fan-out:
+
+- the lineage row in `.ailine/tree.db`;
+- `<id>.manifest.json`, `<id>.metadata.json`, `<id>.diff.patch` in the
+  storage dir;
+- any content-addressed objects under `<storage_dir>/objects/` that *only*
+  this row referenced — shared objects survive.
+
+By default the linked MLflow run is **not** deleted. Override with the CLI
+or with a project-level default in `.ailine.yml`:
+
+```yaml
+cleanup:
+  remove:
+    with_mlflow: false   # default; set to true to also delete linked MLflow runs
+```
+
+Resolution order: explicit `--with-mlflow true|false` on the CLI wins, then
+`cleanup.remove.with_mlflow` in `.ailine.yml`, then the built-in default
+`false`. Use `ailine remove <id> --dry-run` to preview without changes.
+
+`ailine purge` is the project-wide reset: it removes `.ailine/`,
+`.ailine.yml`, `.ailineignore`, and any non-default snapshot `storage_dir`
+configured outside `.ailine/`. `mlruns/` and `repo/` are intentionally left
+alone (those belong to the user). `purge` always asks
+`All AIline files listed above will be removed. Confirm? [y/N]`; pass
+`--dry-run` to print the plan and skip the prompt entirely.
 
 ## Limitations
 

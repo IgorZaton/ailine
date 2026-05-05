@@ -37,6 +37,15 @@ DEFAULT_RUN_CAPTURE_CONFIG = {
     "enabled": True,
 }
 
+# `cleanup:` defaults for `ailine remove` and `ailine purge`. CLI flags on
+# those commands override these values; `--dry-run` and the purge confirmation
+# prompt are interactive concerns and stay off the YAML schema.
+DEFAULT_CLEANUP_CONFIG = {
+    "remove": {
+        "with_mlflow": False,
+    },
+}
+
 # `project:` documents intent and pins schema version for migrations.
 SUPPORTED_PROJECT_VERSIONS = {1}
 DEFAULT_PROJECT_CONFIG = {

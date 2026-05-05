@@ -15,6 +15,7 @@ from ailine.cli.init import (
     init_workspace_command,
     reset_demo_command,
 )
+from ailine.cli.manage import purge_command, remove_command
 from ailine.cli.prune import prune_legacy_snapshots_command
 from ailine.cli.restore import restore_command
 from ailine.cli.track import track_command
@@ -179,6 +180,8 @@ cli.add_command(track_command)
 cli.add_command(doctor_command)
 cli.add_command(prune_legacy_snapshots_command)
 cli.add_command(restore_command)
+cli.add_command(remove_command)
+cli.add_command(purge_command)
 
 
 def main():
