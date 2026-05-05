@@ -61,11 +61,19 @@ DEFAULT_TRACK_CONFIG = {
         "mode": "inherit",   # inherit | wrap | none
         "set_env": False,    # if true, ailine sets MLFLOW_TRACKING_URI before child
         "inherit_name_sync": "auto",  # off | auto | force
-        # In inherit mode: pre-create the MLflow run and export MLFLOW_RUN_ID
-        # to the child process so the lineage UI shows a live link from
-        # second zero, without forcing the training script to import ailine.
-        # Ignored for wrap/none modes.
-        "prelink": True,
+        # How to associate the user's MLflow run with the AIline lineage row.
+        #   tag     - inject AILINE_CORRELATION_ID into the child env; the
+        #             AIline MLflow plugin tags every run started in that
+        #             process and the session polls for it. Zero client code
+        #             changes, no run id ownership. (Default.)
+        #   prelink - AIline pre-creates the MLflow run and exports
+        #             MLFLOW_RUN_ID. Brittle when the configured experiment
+        #             is missing; kept for users who want AIline to own the
+        #             run id end-to-end.
+        #   none    - skip live linking entirely.
+        "link_strategy": "tag",
+        # Cadence (seconds) for the tag-poller in "tag" mode.
+        "link_poll_seconds": 3.0,
     },
     "dvc": {
         "verify": "off",        # off | warn | strict
@@ -74,6 +82,7 @@ DEFAULT_TRACK_CONFIG = {
 }
 VALID_MLFLOW_MODES = {"inherit", "wrap", "none"}
 VALID_MLFLOW_INHERIT_NAME_SYNC = {"off", "auto", "force"}
+VALID_MLFLOW_LINK_STRATEGIES = {"tag", "prelink", "none"}
 VALID_DVC_VERIFY_LEVELS = {"off", "warn", "strict"}
 
 

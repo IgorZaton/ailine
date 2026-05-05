@@ -160,43 +160,52 @@ alone (those belong to the user). `purge` always asks
 
 ## Limitations
 
-### Inherit-mode pre-link (`track.mlflow.prelink`)
+### Real-time MLflow linking (`track.mlflow.link_strategy`)
 
-In `track.mlflow.mode: inherit` AIline pre-creates an MLflow run and exports
-`MLFLOW_RUN_ID` to the child so the lineage UI shows a live MLflow link from
-second zero, **without requiring any `import ailine` in your training script**.
+AIline links each lineage row to the user's MLflow run **without requiring
+any `import ailine` in the training script**. The default mechanism is a
+deterministic correlation tag:
 
-This works for the common pattern: a single `mlflow.start_run()` call inside
-the training script. If your script has a more elaborate MLflow setup, the
-known caveats are:
+1. `ailine track` generates a per-invocation `AILINE_CORRELATION_ID` (UUID)
+   and exports it to the child process.
+2. AIline ships a tiny MLflow plugin (`AilineRunContextProvider`,
+   auto-discovered via the `mlflow.run_context_provider` entry point) that
+   tags every run started in that child with
+   `ailine.correlation_id=<uuid>`.
+3. The session loop polls MLflow (default cadence:
+   `track.mlflow.link_poll_seconds=3.0`) for that tag. The first match wins
+   and the lineage row's `mlflow_run` column is updated mid-flight.
 
-- **You explicitly call `mlflow.start_run(run_id=...)`**: your run id wins;
-  AIline's pre-created run becomes orphaned in MLflow. Set
-  `track.mlflow.prelink: false` to disable pre-creation in this case.
-- **Your script opens multiple top-level runs in one process**: the first
-  `start_run()` resumes AIline's pre-created run; subsequent ones create new
-  runs as usual but are not linked to the AIline lineage row.
-- **You select a non-default experiment inside the script** (e.g.
-  `mlflow.set_experiment(...)` after the run already started): MLflow ignores
-  the change for an in-progress run; the AIline run lives in whichever
-  experiment was active at create-time.
-- **Your tracking backend is unreachable at start**: pre-creation fails
-  silently and AIline falls back to post-hoc matching (status: `in_progress`
-  with empty MLflow column until the child finishes).
+Strategies live under `track.mlflow.link_strategy` in `.ailine.yml`:
+
+- `tag` (**default**) — the flow above. Zero client code changes, no run id
+  ownership. **Requires AIline to be installed in the same Python venv as
+  your training script** so MLflow loads the plugin.
+- `prelink` — legacy: AIline pre-creates the MLflow run and exports
+  `MLFLOW_RUN_ID`. Brittle when the configured experiment is missing or
+  deleted; kept for users who explicitly want AIline to own the run id.
+- `none` — skip live linking entirely; AIline still falls back to a
+  best-effort post-hoc lookup at the end of the run.
 
 #### Troubleshooting
 
-- **Empty MLflow column for in-progress runs**: confirm `MLFLOW_TRACKING_URI`
-  resolves from `ailine track`'s shell, then re-run with
-  `AILINE_LOG_LEVEL=DEBUG`. The log will show whether `create_run` succeeded.
-- **AIline's pre-created run shows up empty in MLflow UI**: your script took
-  a path that didn't resume it (e.g. explicit `run_id=...`). Either align the
-  script with the env-var convention or set `track.mlflow.prelink: false`.
-- **Wrong experiment**: set `MLFLOW_EXPERIMENT_NAME` or `MLFLOW_EXPERIMENT_ID`
-  in the shell that invokes `ailine track`. Both are honored by the
-  pre-creation step before falling back to MLflow's `Default` experiment.
-- **Multiple lineage rows for one training run**: typically means your
-  script opened a fresh run; see the second bullet under known caveats.
+- **Empty MLflow column even after the run finishes**: AIline must be
+  installed in the same venv as the training script so its
+  `run_context_provider` plugin is auto-loaded by MLflow. From that venv,
+  `python -c "import ailine.integrations.mlflow_plugin"` should succeed.
+- **Wrong tracking server**: `ailine init-workspace` now prints the
+  resolved tracking URI / UI base / storage dir with their source labels
+  and a copy-pasteable `export AILINE_MLFLOW_URI=...` snippet. Pin those
+  in your shell rc so AIline and your script always talk to the same
+  server.
+- **Multiple AIline-launched runs against one MLflow server**: each carries
+  its own correlation id, so links stay deterministic regardless of
+  concurrency.
+- **`prelink` users seeing `INVALID_PARAMETER_VALUE: experiment ... is
+  deleted`**: the legacy `prelink` strategy fails when the resolved
+  MLflow experiment is in a deleted state. Switch to
+  `link_strategy: tag` (the default) or set `MLFLOW_EXPERIMENT_NAME` to an
+  active experiment.
 
 ## Layout
 

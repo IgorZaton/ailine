@@ -137,6 +137,58 @@ class ValidateConfigTests(unittest.TestCase):
             validate_config(path)
         self.assertIn("cleanup.remove.with_mlflow", str(ctx.exception))
 
+    def test_link_strategy_default_is_tag(self):
+        path = self._write("project:\n  version: 1\n")
+        result = validate_config(path)
+        self.assertEqual(result.track["mlflow"]["link_strategy"], "tag")
+        self.assertGreater(result.track["mlflow"]["link_poll_seconds"], 0)
+
+    def test_link_strategy_accepts_known_values(self):
+        for value in ("tag", "prelink", "none"):
+            with self.subTest(value=value):
+                path = self._write(f"track:\n  mlflow:\n    link_strategy: {value}\n")
+                result = validate_config(path)
+                self.assertEqual(result.track["mlflow"]["link_strategy"], value)
+
+    def test_link_strategy_rejects_unknown_value(self):
+        path = self._write("track:\n  mlflow:\n    link_strategy: bogus\n")
+        with self.assertRaises(ConfigValidationError) as ctx:
+            validate_config(path)
+        self.assertIn("track.mlflow.link_strategy", str(ctx.exception))
+
+    def test_link_poll_seconds_must_be_positive(self):
+        path = self._write("track:\n  mlflow:\n    link_poll_seconds: 0\n")
+        with self.assertRaises(ConfigValidationError) as ctx:
+            validate_config(path)
+        self.assertIn("track.mlflow.link_poll_seconds", str(ctx.exception))
+
+    def test_legacy_prelink_true_migrates_to_link_strategy_prelink(self):
+        path = self._write("track:\n  mlflow:\n    prelink: true\n")
+        result = validate_config(path)
+        self.assertEqual(result.track["mlflow"]["link_strategy"], "prelink")
+        self.assertNotIn("prelink", result.track["mlflow"])
+        self.assertTrue(any("prelink" in w for w in result.warnings))
+
+    def test_legacy_prelink_false_migrates_to_link_strategy_none(self):
+        path = self._write("track:\n  mlflow:\n    prelink: false\n")
+        result = validate_config(path)
+        self.assertEqual(result.track["mlflow"]["link_strategy"], "none")
+        self.assertTrue(any("prelink" in w for w in result.warnings))
+
+    def test_explicit_link_strategy_wins_over_legacy_prelink(self):
+        path = self._write(
+            "track:\n  mlflow:\n    prelink: true\n    link_strategy: tag\n"
+        )
+        result = validate_config(path)
+        self.assertEqual(result.track["mlflow"]["link_strategy"], "tag")
+        self.assertTrue(any("prelink" in w for w in result.warnings))
+
+    def test_legacy_prelink_non_bool_rejected(self):
+        path = self._write('track:\n  mlflow:\n    prelink: "yes"\n')
+        with self.assertRaises(ConfigValidationError) as ctx:
+            validate_config(path)
+        self.assertIn("track.mlflow.prelink", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

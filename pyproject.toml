@@ -47,6 +47,12 @@ pytest = "^8.0"
 [tool.poetry.scripts]
 ailine = "ailine.cli.main:main"
 
+# MLflow auto-discovers run-context providers via this entry point group and
+# applies their tags() output to every run created in the same Python env.
+# Our provider is a no-op when AILINE_CORRELATION_ID is unset.
+[tool.poetry.plugins."mlflow.run_context_provider"]
+ailine_correlation_id = "ailine.integrations.mlflow_plugin:AilineRunContextProvider"
+
 [tool.poetry-dynamic-versioning]
 enable = true
 vcs = "git"

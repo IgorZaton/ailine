@@ -66,7 +66,9 @@ track:
   mlflow:
     mode: inherit           # inherit | wrap | none
     set_env: false          # if true, ailine sets MLFLOW_TRACKING_URI before child
-    prelink: true           # inherit-only: pre-create MLflow run, export MLFLOW_RUN_ID
+    inherit_name_sync: auto # off | auto | force - inherit-mode run-name sync
+    link_strategy: tag      # tag | prelink | none - inherit-mode live link
+    link_poll_seconds: 3.0  # poll cadence for `tag` strategy
   dvc:
     verify: "off"           # off | warn | strict
     verify_commands: []     # e.g. [["dvc", "status", "--quiet"]]
@@ -112,25 +114,50 @@ If `track.mlflow.set_env: true`, AIline sets `MLFLOW_TRACKING_URI` in the
 child environment before spawning. Useful when you do not want to bake the
 URI into your training code.
 
-### `track.mlflow.prelink` (inherit mode)
+### `track.mlflow.link_strategy` (inherit mode)
 
-When `mode: inherit` and `prelink: true` (the default), AIline pre-creates an
-MLflow run via the MLflow client API and exports `MLFLOW_RUN_ID` into the
-child environment before spawning. A plain `mlflow.start_run()` in your
-training script then resumes that run, so the AIline lineage row carries the
-real MLflow run id (and a clickable UI link) from the moment it is published
-- without requiring any `import ailine` in user code.
+Controls how AIline associates the user's MLflow run with the lineage row in
+`mode: inherit`. Ignored for `wrap` (which always opens its own outer run) and
+`none` (no MLflow at all).
 
-The experiment for the pre-created run is resolved from
+| Strategy  | What AIline does                                                                                                                                                                                                                                  | When to use                                                                                                          |
+|-----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
+| `tag`     | Injects `AILINE_CORRELATION_ID` into the child env. The bundled MLflow plugin (`mlflow.run_context_provider` entry point) tags every MLflow run with `ailine.correlation_id=<uuid>`, and AIline polls MLflow until the match appears, then writes `mlflow_run` mid-flight. | **Default.** Zero client-code changes. Requires AIline installed in the same venv as the training script.            |
+| `prelink` | Pre-creates the MLflow run via `MlflowClient.create_run` and exports `MLFLOW_RUN_ID` into the child. A plain `mlflow.start_run()` resumes that run.                                                                                                | Legacy. Use when you specifically want AIline to own the MLflow run id. Brittle if the resolved experiment is deleted.|
+| `none`    | No live linking. AIline still attempts a best-effort post-hoc lookup of the most recent MLflow run started during the child's lifetime.                                                                                                            | Use when your training script manages MLflow run ids itself, or when MLflow is unreachable.                          |
+
+`link_poll_seconds` controls the cadence of the `tag` strategy's MLflow poll
+(defaults to `3.0`).
+
+For the `prelink` strategy the experiment is resolved from
 `MLFLOW_EXPERIMENT_ID` then `MLFLOW_EXPERIMENT_NAME` (creating the named
 experiment if missing), falling back to MLflow's `Default` experiment
 (id `0`).
 
-Set `prelink: false` if your script explicitly opens runs with
-`mlflow.start_run(run_id=...)`, manages multiple top-level runs in one
-process, or otherwise needs MLflow to mint a fresh run id at script start.
-The setting is ignored for `mode: wrap` and `mode: none`. See the
-[Limitations](../README.md#limitations) section for full troubleshooting.
+Legacy `prelink: true|false` keys in older `.ailine.yml` files are
+auto-migrated (`prelink: true` -> `link_strategy: prelink`,
+`prelink: false` -> `link_strategy: none`) and surface a deprecation
+warning via `ailine doctor`. Update your config to use `link_strategy`
+directly.
+
+See the [Limitations](../README.md#limitations) section for troubleshooting.
+
+### `init-workspace` MLflow environment summary
+
+`ailine init-workspace` prints the resolved MLflow tracking URI, UI base, and
+snapshot storage directory along with the **source** that produced each value
+(`AILINE_MLFLOW_URI`, `MLFLOW_TRACKING_URI`, `default(file://mlruns)`, etc.).
+When any value comes from a non-AIline source the command also emits a
+copy-pasteable
+
+```
+export AILINE_MLFLOW_URI=...
+export AILINE_MLFLOW_UI_BASE=...
+```
+
+snippet so the user can pin them in their shell rc and guarantee that
+`ailine track` and the training script always talk to the same MLflow
+server.
 
 ### `track.dvc.verify`
 

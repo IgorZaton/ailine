@@ -53,7 +53,7 @@ def status(verbose):
         )
     tree = repository.fetch_status_rows()
     if not tree:
-        click.echo("No experiments recorded yet. Use 'ailine run' to log one.")
+        click.echo("No experiments recorded yet. Use 'ailine track -- <command>' to log one.")
         return
     if verbose:
         print_formatted_data(tree)
@@ -170,6 +170,8 @@ def serve():
     from ailine.web.app import app
 
     start_mlflow_ui()
+    click.echo("AIline UI: http://127.0.0.1:5000")
+    click.echo("MLflow UI: http://127.0.0.1:5001")
     app.run(host="0.0.0.0", port=5000, debug=True)
 
 

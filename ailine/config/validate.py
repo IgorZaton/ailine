@@ -32,6 +32,7 @@ from ailine.config.defaults import (
     SUPPORTED_PROJECT_VERSIONS,
     VALID_DVC_VERIFY_LEVELS,
     VALID_MLFLOW_INHERIT_NAME_SYNC,
+    VALID_MLFLOW_LINK_STRATEGIES,
     VALID_MLFLOW_MODES,
     VALID_PROJECT_MODES,
 )
@@ -113,7 +114,7 @@ def _validate_project(raw: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
-def _validate_track(raw: Dict[str, Any]) -> Dict[str, Any]:
+def _validate_track(raw: Dict[str, Any], warnings: List[str]) -> Dict[str, Any]:
     cfg = _merge_defaults(DEFAULT_TRACK_CONFIG, raw)
 
     if cfg["repo_root"] != "auto" and not isinstance(cfg["repo_root"], str):
@@ -136,9 +137,45 @@ def _validate_track(raw: Dict[str, Any]) -> Dict[str, Any]:
             f"Invalid track.mlflow.inherit_name_sync '{mlflow_cfg['inherit_name_sync']}'. "
             f"Allowed: {sorted(VALID_MLFLOW_INHERIT_NAME_SYNC)}."
         )
-    if not isinstance(mlflow_cfg.get("prelink", True), bool):
+
+    # Migrate legacy `prelink: bool` -> `link_strategy`. Only honor it when the
+    # user has not also set `link_strategy` explicitly (explicit wins).
+    raw_mlflow = raw.get("mlflow") if isinstance(raw, dict) else None
+    raw_mlflow = raw_mlflow if isinstance(raw_mlflow, dict) else {}
+    legacy_prelink = raw_mlflow.get("prelink", None)
+    explicit_strategy = "link_strategy" in raw_mlflow
+    if legacy_prelink is not None:
+        if not isinstance(legacy_prelink, bool):
+            raise ConfigValidationError(
+                "track.mlflow.prelink must be true/false."
+            )
+        if not explicit_strategy:
+            migrated = "prelink" if legacy_prelink else "none"
+            mlflow_cfg["link_strategy"] = migrated
+            warnings.append(
+                "track.mlflow.prelink is deprecated; migrated to "
+                f"track.mlflow.link_strategy='{migrated}'. "
+                "Replace 'prelink' with 'link_strategy' in .ailine.yml."
+            )
+        else:
+            warnings.append(
+                "track.mlflow.prelink is deprecated and ignored because "
+                "track.mlflow.link_strategy is set explicitly. "
+                "Remove 'prelink' from .ailine.yml."
+            )
+    # Legacy default `prelink` may have been left in DEFAULT_TRACK_CONFIG copies
+    # via tests; drop it before downstream code reads the merged dict.
+    mlflow_cfg.pop("prelink", None)
+
+    if mlflow_cfg["link_strategy"] not in VALID_MLFLOW_LINK_STRATEGIES:
         raise ConfigValidationError(
-            "track.mlflow.prelink must be true/false."
+            f"Invalid track.mlflow.link_strategy '{mlflow_cfg['link_strategy']}'. "
+            f"Allowed: {sorted(VALID_MLFLOW_LINK_STRATEGIES)}."
+        )
+    poll = mlflow_cfg["link_poll_seconds"]
+    if not isinstance(poll, (int, float)) or isinstance(poll, bool) or poll <= 0:
+        raise ConfigValidationError(
+            "track.mlflow.link_poll_seconds must be a positive number."
         )
 
     dvc_cfg = cfg["dvc"]
@@ -271,7 +308,7 @@ def validate_config(config_path: Optional[str] = None) -> ValidatedConfig:
         config_path=path,
         config_exists=exists,
         project=_validate_project(raw.get("project") or {}),
-        track=_validate_track(raw.get("track") or {}),
+        track=_validate_track(raw.get("track") or {}, warnings),
         snapshot=_validate_snapshot(raw.get("snapshot") or {}),
         dvc=_validate_dvc(raw.get("dvc") or {}),
         environment=_validate_environment(raw.get("environment") or {}),

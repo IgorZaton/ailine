@@ -1,11 +1,12 @@
 """Tests for the inherit-mode pre-link path.
 
-In ``track.mlflow.mode: inherit`` with ``prelink: true`` (the default),
-AIline pre-creates an MLflow run via the MLflow client API and exports
+In ``track.mlflow.mode: inherit`` with ``link_strategy: prelink``, AIline
+pre-creates an MLflow run via the MLflow client API and exports
 ``MLFLOW_RUN_ID`` to the child process so a plain ``mlflow.start_run()``
 in the user's script resumes that run. The lineage row's ``mlflow_run``
 column is populated *before* the subprocess starts and the post-hoc
-search-runs lookup is skipped.
+search-runs lookup is skipped. The default linking strategy is ``tag``;
+these tests force ``link_strategy: prelink`` to exercise the legacy path.
 """
 
 import os
@@ -101,7 +102,7 @@ class InheritPrelinkTests(unittest.TestCase):
 
     def test_prelink_default_inherit_populates_mlflow_run_in_db(self):
         cfg = validate_config(self.cfg_path)
-        self.assertTrue(cfg.track["mlflow"]["prelink"])
+        cfg.track["mlflow"]["link_strategy"] = "prelink"
         client = _make_client_mock("prelinked-run-1")
         with patch("ailine.run.session.MlflowClient", return_value=client), patch(
             "ailine.run.session._best_effort_mlflow_run_after_inherit_child"
@@ -123,6 +124,7 @@ class InheritPrelinkTests(unittest.TestCase):
 
     def test_prelink_injects_mlflow_run_id_into_child_env(self):
         cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["link_strategy"] = "prelink"
         client = _make_client_mock("env-prelinked-run")
         observed, fake_run = self._capture_subprocess_env()
         with patch("ailine.run.session.MlflowClient", return_value=client), patch(
@@ -140,6 +142,7 @@ class InheritPrelinkTests(unittest.TestCase):
 
     def test_prelink_does_not_overwrite_user_supplied_run_id(self):
         cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["link_strategy"] = "prelink"
         os.environ["MLFLOW_RUN_ID"] = "user-run-id"
         client = _make_client_mock("ailine-prelinked")
         observed, fake_run = self._capture_subprocess_env()
@@ -158,7 +161,7 @@ class InheritPrelinkTests(unittest.TestCase):
 
     def test_prelink_disabled_falls_back_to_post_hoc_lookup(self):
         cfg = validate_config(self.cfg_path)
-        cfg.track["mlflow"]["prelink"] = False
+        cfg.track["mlflow"]["link_strategy"] = "none"
         observed, fake_run = self._capture_subprocess_env()
         client = _make_client_mock("should-not-be-used")
         with patch("ailine.run.session.MlflowClient", return_value=client), patch(
@@ -184,6 +187,7 @@ class InheritPrelinkTests(unittest.TestCase):
 
     def test_prelink_create_run_failure_falls_back_silently(self):
         cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["link_strategy"] = "prelink"
         client = MagicMock()
         client.create_run.side_effect = RuntimeError("backend unreachable")
         client.get_experiment_by_name.return_value = None
@@ -211,6 +215,7 @@ class InheritPrelinkTests(unittest.TestCase):
     def test_wrap_mode_does_not_invoke_prelink(self):
         cfg = validate_config(self.cfg_path)
         cfg.track["mlflow"]["mode"] = "wrap"
+        cfg.track["mlflow"]["link_strategy"] = "prelink"
         with patch("ailine.run.session.MlflowClient") as client_cls, patch(
             "ailine.run.session.mlflow.start_run"
         ) as start_run:
@@ -230,6 +235,7 @@ class InheritPrelinkTests(unittest.TestCase):
 
     def test_prelink_uses_experiment_id_from_env_when_set(self):
         cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["link_strategy"] = "prelink"
         os.environ["MLFLOW_EXPERIMENT_ID"] = "42"
         client = _make_client_mock("exp-run")
         with patch("ailine.run.session.MlflowClient", return_value=client):
@@ -244,6 +250,7 @@ class InheritPrelinkTests(unittest.TestCase):
 
     def test_prelink_creates_experiment_by_name_when_missing(self):
         cfg = validate_config(self.cfg_path)
+        cfg.track["mlflow"]["link_strategy"] = "prelink"
         os.environ["MLFLOW_EXPERIMENT_NAME"] = "demo-experiment"
         client = MagicMock()
         client.create_run.return_value.info.run_id = "named-exp-run"

@@ -38,8 +38,11 @@ project:
 track:
   repo_root: auto
   mlflow:
-    mode: inherit       # inherit | wrap | none
+    mode: inherit              # inherit | wrap | none
     set_env: false
+    inherit_name_sync: auto    # off | auto | force
+    link_strategy: tag         # tag | prelink | none
+    link_poll_seconds: 3.0
   dvc:
     verify: "off"       # off | warn | strict
     verify_commands: []
@@ -77,6 +80,43 @@ cleanup:
 """
 
 
+def _print_mlflow_env_summary() -> None:
+    """Print the effective MLflow + storage runtime values with their source.
+
+    Surfaces *what AIline will actually use* the moment a user finishes
+    bootstrapping a project, so a wrong tracking URI does not silently make
+    runs invisible. When the values come from a non-AIline source (defaults
+    or ``MLFLOW_TRACKING_URI``), also print a copy-pasteable ``export``
+    snippet that pins them into the user's shell.
+    """
+    summary = constants.resolve_mlflow_environment()
+    click.echo("")
+    click.echo("Resolved MLflow environment:")
+    click.echo(
+        f"  tracking URI: {summary['tracking_uri']}    "
+        f"(source: {summary['tracking_uri_source']})"
+    )
+    click.echo(
+        f"  UI base:      {summary['ui_base']}    "
+        f"(source: {summary['ui_base_source']})"
+    )
+    click.echo(
+        f"  storage dir:  {summary['storage_dir']}    "
+        f"(source: {summary['storage_dir_source']})"
+    )
+
+    pinned_sources = {"AILINE_MLFLOW_URI", "AILINE_MLFLOW_UI_BASE"}
+    needs_pin = (
+        summary["tracking_uri_source"] not in pinned_sources
+        or summary["ui_base_source"] not in pinned_sources
+    )
+    if needs_pin:
+        click.echo("")
+        click.echo("To pin these for future shells, add to your rc:")
+        click.echo(f"  export AILINE_MLFLOW_URI={summary['tracking_uri']}")
+        click.echo(f"  export AILINE_MLFLOW_UI_BASE={summary['ui_base']}")
+
+
 def _write_default_ailineignore(target_path: str, *, force: bool) -> None:
     """Idempotently seed ``target_path`` with the default ``.ailineignore`` content.
 
@@ -112,6 +152,8 @@ def init_workspace_command(force: bool):
 
     init_state_dirs()
     click.echo(f"State directory: {constants.STATE_DIR}")
+    _print_mlflow_env_summary()
+    click.echo("")
     click.echo(
         "Next: run 'ailine doctor' to verify, then 'ailine track -- <command>'. "
         "Customize ignored paths in .ailineignore."

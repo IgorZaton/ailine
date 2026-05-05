@@ -31,6 +31,8 @@ import re
 import shlex
 import shutil
 import subprocess
+import threading
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterator, List, Optional, Sequence
@@ -40,6 +42,7 @@ import mlflow
 from mlflow.tracking import MlflowClient
 
 from ailine.config import constants
+from ailine.integrations.mlflow_plugin import CORRELATION_ENV, CORRELATION_TAG
 from ailine.config.defaults import CommitType
 from ailine.config.validate import ValidatedConfig
 from ailine.fingerprint.env import collect_environment_fingerprint
@@ -164,28 +167,36 @@ def _snapshot_if_dirty(
 
 
 def _maybe_set_mlflow_env(
-    track_mlflow_cfg: dict, prelink_run_id: Optional[str] = None
+    track_mlflow_cfg: dict,
+    prelink_run_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
 ) -> Optional[dict]:
-    """Build the child env dict with optional MLflow overrides.
+    """Build the child env dict with optional MLflow + AIline overrides.
 
     When ``set_env=true`` injects ``MLFLOW_TRACKING_URI``. When
-    ``prelink_run_id`` is provided (inherit-mode pre-link path), exports
+    ``prelink_run_id`` is provided (legacy inherit-mode prelink path), exports
     ``MLFLOW_RUN_ID`` so a plain ``mlflow.start_run()`` in the user's script
     resumes the AIline-pre-created run instead of creating a fresh one.
-    Never overwrites a user-supplied ``MLFLOW_RUN_ID``.
+    When ``correlation_id`` is provided (tag-based linking), exports
+    ``AILINE_CORRELATION_ID`` so the AIline MLflow plugin can tag every run
+    started inside that child process. Never overwrites a user-supplied
+    value of any of these variables.
 
     Returns an env dict (copy of ``os.environ`` with overrides) or ``None``
     when no overrides are needed.
     """
     set_env = bool(track_mlflow_cfg.get("set_env"))
     has_prelink = bool(prelink_run_id)
-    if not set_env and not has_prelink:
+    has_correlation = bool(correlation_id)
+    if not set_env and not has_prelink and not has_correlation:
         return None
     env = os.environ.copy()
     if set_env and "MLFLOW_TRACKING_URI" not in env:
         env["MLFLOW_TRACKING_URI"] = mlflow.get_tracking_uri()
     if has_prelink and "MLFLOW_RUN_ID" not in env:
         env["MLFLOW_RUN_ID"] = str(prelink_run_id)
+    if has_correlation and CORRELATION_ENV not in env:
+        env[CORRELATION_ENV] = str(correlation_id)
     return env
 
 
@@ -225,6 +236,60 @@ def _precreate_mlflow_run_for_inherit(run_name: str) -> Optional[str]:
     except Exception as exc:
         logging.debug("MLflow inherit-mode pre-link create_run failed: %s", exc)
         return None
+
+
+def _resolve_run_by_correlation(correlation_id: str) -> Optional[str]:
+    """One-shot lookup: newest MLflow run carrying the AIline correlation tag.
+
+    Returns ``None`` on any error (server unreachable, malformed response,
+    no match yet). The poller treats that uniformly as "not yet linked".
+    """
+    if not correlation_id:
+        return None
+    try:
+        mlflow.set_tracking_uri(constants.MLFLOW_TRACKING_URI)
+        client = MlflowClient()
+        # Search across all active experiments. The correlation id is unique
+        # per AIline track invocation, so the first match is authoritative
+        # regardless of which experiment the user's code chose.
+        experiment_ids = [exp.experiment_id for exp in client.search_experiments()]
+        if not experiment_ids:
+            return None
+        runs = client.search_runs(
+            experiment_ids=experiment_ids,
+            filter_string=f'tags."{CORRELATION_TAG}" = "{correlation_id}"',
+            max_results=1,
+        )
+        if not runs:
+            return None
+        return runs[0].info.run_id
+    except Exception as exc:
+        logging.debug("Correlation-tag MLflow lookup failed: %s", exc)
+        return None
+
+
+def _run_correlation_poller(
+    correlation_id: str,
+    record_id: str,
+    poll_seconds: float,
+    stop_event: threading.Event,
+    result_holder: List[Optional[str]],
+) -> None:
+    """Background poller: link the lineage row mid-flight via correlation tag.
+
+    Runs in a daemon thread for the duration of the user's subprocess. Exits
+    immediately after the first successful update, or when ``stop_event`` is
+    set after the child finishes (the caller does one final retry on exit).
+    On success, appends the run id to ``result_holder`` so the caller can
+    refresh its local mlflow_run_id without re-querying the DB.
+    """
+    while not stop_event.is_set():
+        run_id = _resolve_run_by_correlation(correlation_id)
+        if run_id and repository.set_mlflow_run(record_id, run_id):
+            result_holder.append(run_id)
+            return
+        if stop_event.wait(timeout=poll_seconds):
+            return
 
 
 @contextlib.contextmanager
@@ -443,16 +508,28 @@ def run_tracked_command(
         run_command_summary = None
 
     track_mlflow = config.track["mlflow"]
+    link_strategy = str(track_mlflow.get("link_strategy", "tag"))
 
-    # Inherit-mode pre-link: pre-create the MLflow run before the child runs
-    # so the lineage row (and UI MLflow column) carry a real run id from the
-    # moment the row is published. Wrap mode opens its own outer run via
-    # _maybe_wrap_mlflow_run; none mode skips MLflow entirely.
+    # Inherit-mode link strategies (only meaningful when mode == "inherit"):
+    #   tag     - inject AILINE_CORRELATION_ID and rely on the MLflow plugin
+    #             + background poller to fill mlflow_run mid-flight.
+    #   prelink - AIline pre-creates the MLflow run and exports MLFLOW_RUN_ID.
+    #   none    - skip live linking entirely.
+    # Wrap mode opens its own outer run via _maybe_wrap_mlflow_run, and
+    # mlflow.mode == "none" skips MLflow entirely; both ignore link_strategy.
     prelink_run_id: Optional[str] = None
-    if track_mlflow["mode"] == "inherit" and bool(track_mlflow.get("prelink", True)):
-        prelink_run_id = _precreate_mlflow_run_for_inherit(record_label)
+    correlation_id: Optional[str] = None
+    if track_mlflow["mode"] == "inherit":
+        if link_strategy == "prelink":
+            prelink_run_id = _precreate_mlflow_run_for_inherit(record_label)
+        elif link_strategy == "tag":
+            correlation_id = uuid.uuid4().hex
 
-    child_env = _maybe_set_mlflow_env(track_mlflow, prelink_run_id=prelink_run_id)
+    child_env = _maybe_set_mlflow_env(
+        track_mlflow,
+        prelink_run_id=prelink_run_id,
+        correlation_id=correlation_id,
+    )
 
     git_url = git_url_hint or _maybe_origin_url(repo)
     env_fingerprint_json = json.dumps(env_fingerprint, sort_keys=True)
@@ -471,6 +548,9 @@ def run_tracked_command(
     mlflow_run_id: Optional[str] = prelink_run_id
     record_inserted = False
     record: Optional[RunRecord] = None
+    poller_thread: Optional[threading.Thread] = None
+    poller_stop = threading.Event()
+    poller_result: List[Optional[str]] = []
 
     try:
         with _maybe_wrap_mlflow_run(track_mlflow["mode"], mlflow_wrap_name) as wrap_run_id:
@@ -508,12 +588,31 @@ def run_tracked_command(
             if on_run_started is not None:
                 on_run_started(commit_id, mlflow_run_id)
 
+            if correlation_id is not None:
+                poll_seconds = float(track_mlflow.get("link_poll_seconds", 3.0) or 3.0)
+                poller_thread = threading.Thread(
+                    target=_run_correlation_poller,
+                    args=(
+                        correlation_id,
+                        commit_id,
+                        poll_seconds,
+                        poller_stop,
+                        poller_result,
+                    ),
+                    daemon=True,
+                    name="ailine-mlflow-link-poller",
+                )
+                poller_thread.start()
+
             proc = subprocess.run(list(argv), cwd=git_root, env=child_env, check=False)
             exit_code = proc.returncode
     except BaseException:
         # AIline-side failure (subprocess raise, mlflow context error, etc.)
         # after we already published an in_progress row: mark it failed so the
         # UI does not leave it stuck visually as "in progress" forever.
+        poller_stop.set()
+        if poller_thread is not None:
+            poller_thread.join(timeout=2.0)
         if record_inserted:
             try:
                 repository.fail_run(
@@ -528,7 +627,31 @@ def run_tracked_command(
 
     until_utc = datetime.now(timezone.utc)
 
-    if track_mlflow["mode"] == "inherit" and not mlflow_run_id:
+    if poller_thread is not None:
+        poller_stop.set()
+        poller_thread.join(timeout=2.0)
+        if poller_result:
+            mlflow_run_id = poller_result[0] or mlflow_run_id
+        # Final retry: the child may have started its MLflow run very late,
+        # or the last poll cycle may have raced with subprocess exit.
+        if not mlflow_run_id and correlation_id:
+            late_run_id = _resolve_run_by_correlation(correlation_id)
+            if late_run_id and repository.set_mlflow_run(commit_id, late_run_id):
+                mlflow_run_id = late_run_id
+        if not mlflow_run_id:
+            logging.warning(
+                "AIline tag-based MLflow link did not match any run "
+                "(correlation_id=%s). The user's script may have run "
+                "without MLflow, or the AIline plugin was not loaded in "
+                "the same Python environment.",
+                correlation_id,
+            )
+
+    if (
+        track_mlflow["mode"] == "inherit"
+        and not mlflow_run_id
+        and link_strategy != "tag"
+    ):
         mlflow_run_id = _best_effort_mlflow_run_after_inherit_child(since_utc, until_utc)
     if track_mlflow["mode"] == "inherit":
         # When prelink supplied the run id, skip name sync: AIline already

@@ -194,6 +194,35 @@ def fail_run(
         conn.close()
 
 
+def set_mlflow_run(
+    run_id: str,
+    mlflow_run_id: str,
+    db_path: Optional[str] = None,
+) -> bool:
+    """Attach an MLflow run id to an existing lineage row, only if not already set.
+
+    Used by the tag-based correlation poller to update the row mid-flight the
+    moment MLflow surfaces a run carrying our correlation tag. The
+    ``mlflow_run IS NULL OR mlflow_run = ''`` guard prevents stomping a value
+    that the user's script (or the prelink path) may have already supplied.
+
+    Returns ``True`` when the row was updated.
+    """
+    if not mlflow_run_id:
+        return False
+    conn = _connect(db_path)
+    try:
+        cur = conn.execute(
+            "UPDATE tree SET mlflow_run = ? "
+            "WHERE id = ? AND (mlflow_run IS NULL OR mlflow_run = '')",
+            (mlflow_run_id, run_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
 def fetch_status_rows(db_path: Optional[str] = None) -> List[dict]:
     conn = _connect(db_path)
     try:
