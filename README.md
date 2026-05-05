@@ -116,7 +116,7 @@ ailine/
   linkage/         # DVC discovery + linkage classification
   persistence/     # SQLite schema, migrations, repository facade
   run/             # CLI run-command capture
-  snapshot/        # repo scan, manifest, tar.zst archive
+  snapshot/        # repo scan, manifest, content-addressed objects
   web/             # Flask app factory + route modules + templates
 ```
 

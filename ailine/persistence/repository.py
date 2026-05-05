@@ -203,3 +203,41 @@ def fetch_snapshot_browser_row(
         "manifest_path": row[2],
         "diff_path": row[3],
     }
+
+
+def fetch_all_snapshot_locations(db_path: Optional[str] = None) -> List[dict]:
+    """Return on-disk locations for every snapshot row.
+
+    Used by ``ailine prune-legacy-snapshots`` to inspect the format of each
+    bundle without coupling the CLI to raw SQL.
+    """
+    conn = _connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, parent, snapshot_path, manifest_path, metadata_path, diff_path "
+            "FROM tree WHERE type = 'snapshot'"
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "id": r[0],
+            "parent": r[1],
+            "snapshot_path": r[2],
+            "manifest_path": r[3],
+            "metadata_path": r[4],
+            "diff_path": r[5],
+        }
+        for r in rows
+    ]
+
+
+def delete_run(run_id: str, db_path: Optional[str] = None) -> None:
+    conn = _connect(db_path)
+    try:
+        conn.execute("DELETE FROM tree WHERE id = ?", (run_id,))
+        conn.commit()
+    finally:
+        conn.close()

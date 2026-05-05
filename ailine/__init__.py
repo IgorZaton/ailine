@@ -44,11 +44,7 @@ from ailine.linkage.dvc import (  # noqa: F401
 )
 from ailine.persistence.db import init_db  # noqa: F401
 from ailine.run.capture import build_run_command_payload  # noqa: F401
-from ailine.snapshot.archive import (  # noqa: F401
-    create_snapshot,
-    create_tar_zst_archive,
-    extract_tar_zst_archive,
-)
+from ailine.snapshot.archive import create_snapshot  # noqa: F401
 from ailine.snapshot.manifest import build_manifest  # noqa: F401
 from ailine.snapshot.paths import (  # noqa: F401
     ensure_utf8_text,

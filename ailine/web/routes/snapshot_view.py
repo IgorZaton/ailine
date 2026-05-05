@@ -1,18 +1,17 @@
-"""``/snapshot/<id>`` route — code browser for snapshot archives + stored diff.
+"""``/snapshot/<id>`` route — code browser for objects-v1 snapshots + stored diff.
 
-Supports two snapshot bundle formats transparently:
-
-* ``objects-v1`` (current writer): per-file zstd-compressed objects keyed
-  by sha256 under ``<storage>/objects/<sha[:2]>/<sha>.zst``. Detected via
-  the ``format`` field in the metadata sibling (``<id>.metadata.json``).
-* legacy ``tar.zst`` (pre-objects-v1 snapshots): full archive at
-  ``<id>.tar.zst``. Read via :func:`ailine.snapshot.archive.extract_tar_zst_archive`.
+Snapshots use the ``objects-v1`` layout: per-file zstd-compressed objects
+keyed by sha256 under ``<storage>/objects/<sha[:2]>/<sha>.zst``. The format
+is detected via the ``format`` field in the metadata sibling
+(``<id>.metadata.json``). Rows whose metadata is missing or whose ``format``
+is not ``objects-v1`` are treated as legacy and rejected with HTTP 410;
+``ailine prune-legacy-snapshots`` removes those rows and their orphan
+sibling files.
 """
 
 import json
 import logging
 import os
-import tempfile
 from typing import List, Optional, Tuple
 
 from flask import Flask, render_template, request
@@ -20,7 +19,7 @@ from flask import Flask, render_template, request
 from ailine.integrations.git_url import normalize_git_url
 from ailine.persistence import repository
 from ailine.snapshot import object_store
-from ailine.snapshot.archive import SNAPSHOT_FORMAT_OBJECTS_V1, extract_tar_zst_archive
+from ailine.snapshot.archive import SNAPSHOT_FORMAT_OBJECTS_V1
 from ailine.snapshot.paths import ensure_utf8_text
 from ailine.web.code_browser import (
     MAX_BLOB_BYTES,
@@ -31,6 +30,11 @@ from ailine.web.code_browser import (
 )
 from ailine.web.diff_sections import split_unified_diff
 from ailine.web.state import get_repo_url, load_repo_url
+
+
+_LEGACY_SNAPSHOT_MESSAGE = (
+    "Legacy snapshot format - run 'ailine prune-legacy-snapshots' to clean up"
+)
 
 
 def _metadata_path_for(manifest_path: Optional[str]) -> Optional[str]:
@@ -78,14 +82,10 @@ def _included_paths(manifest: List[dict]) -> List[str]:
     return paths
 
 
-def _load_manifest_paths(manifest_path: Optional[str]) -> List[str]:
-    return _included_paths(_load_manifest_entries(manifest_path))
-
-
 def _decode_blob_bytes(raw: bytes) -> Tuple[str, bool, bool]:
     """Decode ``raw`` to UTF-8 text, capping at ``MAX_BLOB_BYTES``.
 
-    Returns ``(content, truncated, unreadable)`` matching the legacy reader.
+    Returns ``(content, truncated, unreadable)``.
     """
     truncated = len(raw) > MAX_BLOB_BYTES
     capped = raw[:MAX_BLOB_BYTES] if truncated else raw
@@ -94,22 +94,6 @@ def _decode_blob_bytes(raw: bytes) -> Tuple[str, bool, bool]:
     except UnicodeDecodeError:
         return "", False, True
     return ensure_utf8_text(text), truncated, False
-
-
-def _read_one_file_from_archive(archive_path: str, rel_path: str) -> Tuple[str, bool, bool]:
-    """Extract archive into a temp dir, read one file, clean up.
-
-    Returns ``(content, truncated, unreadable)``. ``unreadable`` indicates a
-    binary/decoding failure rather than the file being missing.
-    """
-    with tempfile.TemporaryDirectory(prefix="ailine_snap_") as tmp:
-        extract_tar_zst_archive(archive_path, tmp)
-        full = os.path.join(tmp, rel_path)
-        if not os.path.exists(full):
-            raise FileNotFoundError(rel_path)
-        with open(full, "rb") as f:
-            raw = f.read(MAX_BLOB_BYTES + 1)
-    return _decode_blob_bytes(raw)
 
 
 def _read_one_file_from_objects(
@@ -145,27 +129,27 @@ def view(snapshot_id: str):
         logging.warning(f"Snapshot {snapshot_id} not found")
         return "Snapshot not found", 404
 
-    snapshot_path = row["snapshot_path"]
     parent = row["parent"]
     manifest_path = row["manifest_path"]
     diff_path = row["diff_path"]
 
     metadata = _load_metadata(manifest_path)
-    is_objects_v1 = metadata.get("format") == SNAPSHOT_FORMAT_OBJECTS_V1
+    if metadata.get("format") != SNAPSHOT_FORMAT_OBJECTS_V1:
+        logging.warning(
+            "Snapshot %s is not in objects-v1 format (got %r)",
+            snapshot_id,
+            metadata.get("format"),
+        )
+        return _LEGACY_SNAPSHOT_MESSAGE, 410
+
     # Object store layout: <storage_dir>/objects/<sha[:2]>/<sha>.zst.
     # Metadata records the inner "objects/" directory; ``object_store`` APIs
     # take the *parent* (storage_dir) so we strip the trailing component.
-    storage_dir = None
-    if is_objects_v1:
-        objects_dir = metadata.get("objects_dir")
-        if objects_dir:
-            storage_dir = os.path.dirname(os.path.abspath(objects_dir))
-        elif manifest_path:
-            storage_dir = os.path.dirname(os.path.abspath(manifest_path))
-
-    if not is_objects_v1 and (not snapshot_path or not os.path.exists(snapshot_path)):
-        logging.error(f"Snapshot file not found at {snapshot_path}")
-        return f"Snapshot file not found at {snapshot_path}", 500
+    objects_dir = metadata.get("objects_dir")
+    if objects_dir:
+        storage_dir = os.path.dirname(os.path.abspath(objects_dir))
+    else:
+        storage_dir = os.path.dirname(os.path.abspath(manifest_path))
 
     manifest_entries = _load_manifest_entries(manifest_path)
     paths = _included_paths(manifest_entries)
@@ -198,14 +182,9 @@ def view(snapshot_id: str):
     blob = None
     if selected:
         try:
-            if is_objects_v1:
-                content, truncated, unreadable = _read_one_file_from_objects(
-                    manifest_entries, storage_dir, selected
-                )
-            else:
-                content, truncated, unreadable = _read_one_file_from_archive(
-                    snapshot_path, selected
-                )
+            content, truncated, unreadable = _read_one_file_from_objects(
+                manifest_entries, storage_dir, selected
+            )
         except FileNotFoundError:
             return "File not found in snapshot", 404
         except Exception as e:

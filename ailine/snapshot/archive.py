@@ -1,27 +1,22 @@
-"""Snapshot bundle creation and (legacy) tar.zst archive helpers.
+"""Snapshot bundle creation in the ``objects-v1`` layout.
 
-Bundles use the **objects-v1** layout: each included file is written once
-to a content-addressed object store under
+Each included file is written once to a content-addressed object store at
 ``<storage_dir>/objects/<sha[:2]>/<sha>.zst`` and the manifest entries
 already carry the same ``sha256`` keys. Two snapshots that share a file
 share the underlying object on disk.
 
-The legacy ``create_tar_zst_archive`` / ``extract_tar_zst_archive`` helpers
-are intentionally preserved (LSP) so existing snapshots created before
-this format change keep rendering in the web UI without migration.
+The demo-only ``.meta.yaml`` hook (``write_meta_file=True``) is unrelated to
+the bundle format and is preserved for the ``ailine run`` flow.
 """
 
 import hashlib
 import json
 import logging
 import os
-import tarfile
-import tempfile
 from datetime import datetime
 from typing import List
 
 import yaml
-import zstandard as zstd
 
 from ailine.config import constants
 from ailine.snapshot import object_store
@@ -33,31 +28,6 @@ def create_snapshot_metafile(snapshot_hash: str, parent_commit_hash: str) -> Non
         yaml.dump(data, meta_file, default_flow_style=False)
 
 
-def create_tar_zst_archive(snapshot_base: str, repo_path: str, archive_entries: List[dict]) -> str:
-    archive_path = f"{snapshot_base}.tar.zst"
-    with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as tmp_tar:
-        temp_tar_path = tmp_tar.name
-    try:
-        with tarfile.open(temp_tar_path, mode="w") as tar:
-            for entry in sorted(archive_entries, key=lambda item: item["rel_path"]):
-                tar.add(entry["full_path"], arcname=entry["rel_path"], recursive=False)
-        cctx = zstd.ZstdCompressor(level=10)
-        with open(temp_tar_path, "rb") as src, open(archive_path, "wb") as dst:
-            cctx.copy_stream(src, dst)
-    finally:
-        if os.path.exists(temp_tar_path):
-            os.remove(temp_tar_path)
-    return archive_path
-
-
-def extract_tar_zst_archive(archive_path: str, output_dir: str) -> None:
-    dctx = zstd.ZstdDecompressor()
-    with open(archive_path, "rb") as src:
-        with dctx.stream_reader(src) as reader:
-            with tarfile.open(fileobj=reader, mode="r|") as tar:
-                tar.extractall(output_dir)
-
-
 SNAPSHOT_FORMAT_OBJECTS_V1 = "objects-v1"
 
 
@@ -66,7 +36,7 @@ def _write_objects(archive_entries: List[dict], storage_dir: str) -> dict:
 
     Returns a small summary dict; ``object_bytes_total`` reflects the
     *uncompressed* sum of stored file sizes (kept compatible with the
-    legacy ``archive_bytes`` field used elsewhere).
+    ``archive_bytes`` field consumers already read).
     """
     seen: set[str] = set()
     object_bytes_total = 0
@@ -106,7 +76,6 @@ def create_snapshot(
           across snapshots).
         * Writes ``<storage_dir>/<id>.manifest.json``,
           ``<storage_dir>/<id>.metadata.json``, ``<storage_dir>/<id>.diff.patch``.
-        * Does NOT write a per-snapshot ``.tar.zst`` payload.
     """
     manifest_json = json.dumps(manifest_entries, sort_keys=True, separators=(",", ":"))
     snapshot_hash = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
@@ -141,8 +110,6 @@ def create_snapshot(
         "format": SNAPSHOT_FORMAT_OBJECTS_V1,
         "objects_dir": objects_dir,
         "object_count": objects_summary["object_count"],
-        "archive_path": None,
-        "archive_sha256": None,
         "archive_bytes": objects_summary["object_bytes_total"],
         "manifest_path": manifest_path,
         "diff_path": diff_path,
