@@ -3,17 +3,24 @@
   Goal: the questions a real user actually hits.
   Length target: ~120-180 lines of HTML.
 -->
-<article class="docs-page" data-page="troubleshooting">
-  <header class="docs-page__header">
-    <p class="docs-page__eyebrow">AIline docs</p>
-    <h1>Troubleshooting</h1>
-    <p class="docs-page__lede">
-      The problems users hit most, with one diagnostic command and one fix per item. If something
-      is missing here, run <code>ailine doctor --strict --json</code>; it surfaces every config and
-      environment issue AIline can detect locally.
-    </p>
-  </header>
+<link rel="stylesheet" href="./docs.css" />
 
+<nav class="docs-nav" aria-label="AIline documentation">
+  <a class="docs-nav__home" href="./index.html">
+    <img class="docs-nav__logo" src="../../imgs/icon_2.png" alt="AIline logo" />
+    <span>AIline Docs</span>
+  </a>
+  <ul class="docs-nav__list">
+    <li><a href="./quickstart.html">Quickstart</a></li>
+    <li><a href="./concepts.html">Concepts</a></li>
+    <li><a href="./cli-reference.html">CLI reference</a></li>
+    <li><a href="./troubleshooting.html">Troubleshooting</a></li>
+    <li><a href="./internals.html">Internals</a></li>
+  </ul>
+  <a class="docs-nav__back" href="./index.html">&larr; Back to AIline</a>
+</nav>
+
+<main class="docs-layout">
   <aside class="docs-toc" aria-label="On this page">
     <h2 class="docs-toc__title">On this page</h2>
     <ol>
@@ -25,6 +32,17 @@
       <li><a href="#snapshot-location">Where are my snapshots?</a></li>
     </ol>
   </aside>
+
+<article class="docs-page" data-page="troubleshooting">
+  <header class="docs-page__header">
+    <p class="docs-page__eyebrow">AIline docs</p>
+    <h1>Troubleshooting</h1>
+    <p class="docs-page__lede">
+      The problems users hit most, with one diagnostic command and one fix per item. If something
+      is missing here, run <code>ailine doctor --strict --json</code>; it surfaces every config and
+      environment issue AIline can detect locally.
+    </p>
+  </header>
 
   <section id="empty-mlflow-column" class="docs-section">
     <h2>MLflow column stays empty</h2>
@@ -41,7 +59,7 @@
     <p class="docs-callout">
       The plugin is registered as an <code>mlflow.run_context_provider</code> entry point, so
       reinstalling AIline (or upgrading) is what makes MLflow pick it up. See
-      <a href="/ailine/docs/concepts#link-strategy">Concepts &rarr; Real-time MLflow linking</a>
+      <a href="./concepts.html#link-strategy">Concepts &rarr; Real-time MLflow linking</a>
       for the flow.
     </p>
   </section>
@@ -144,3 +162,4 @@ ailine track -- python train.py</code></pre>
 <pre><code class="language-bash">du -sh .ailine/snapshots</code></pre>
   </section>
 </article>
+</main>

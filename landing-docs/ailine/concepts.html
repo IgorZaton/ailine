@@ -3,6 +3,34 @@
   Goal: just enough mental model to make the rest of the docs make sense.
   Length target: ~100-150 lines of HTML.
 -->
+<link rel="stylesheet" href="./docs.css" />
+
+<nav class="docs-nav" aria-label="AIline documentation">
+  <a class="docs-nav__home" href="./index.html">
+    <img class="docs-nav__logo" src="../../imgs/icon_2.png" alt="AIline logo" />
+    <span>AIline Docs</span>
+  </a>
+  <ul class="docs-nav__list">
+    <li><a href="./quickstart.html">Quickstart</a></li>
+    <li><a href="./concepts.html">Concepts</a></li>
+    <li><a href="./cli-reference.html">CLI reference</a></li>
+    <li><a href="./troubleshooting.html">Troubleshooting</a></li>
+    <li><a href="./internals.html">Internals</a></li>
+  </ul>
+  <a class="docs-nav__back" href="./index.html">&larr; Back to AIline</a>
+</nav>
+
+<main class="docs-layout">
+  <aside class="docs-toc" aria-label="On this page">
+    <h2 class="docs-toc__title">On this page</h2>
+    <ol>
+      <li><a href="#lineage-vs-mlflow">Lineage row vs. MLflow run</a></li>
+      <li><a href="#snapshot-vs-commit">Snapshot vs. commit</a></li>
+      <li><a href="#link-strategy">Real-time MLflow linking</a></li>
+      <li><a href="#config-files">.ailine.yml and .ailineignore</a></li>
+    </ol>
+  </aside>
+
 <article class="docs-page" data-page="concepts">
   <header class="docs-page__header">
     <p class="docs-page__eyebrow">AIline docs</p>
@@ -13,16 +41,6 @@
       files <code>.ailine.yml</code> and <code>.ailineignore</code>.
     </p>
   </header>
-
-  <aside class="docs-toc" aria-label="On this page">
-    <h2 class="docs-toc__title">On this page</h2>
-    <ol>
-      <li><a href="#lineage-vs-mlflow">Lineage row vs. MLflow run</a></li>
-      <li><a href="#snapshot-vs-commit">Snapshot vs. commit</a></li>
-      <li><a href="#link-strategy">Real-time MLflow linking</a></li>
-      <li><a href="#config-files">.ailine.yml and .ailineignore</a></li>
-    </ol>
-  </aside>
 
   <section id="lineage-vs-mlflow" class="docs-section">
     <h2>Lineage row vs. MLflow run</h2>
@@ -98,7 +116,7 @@
     <p class="docs-callout docs-callout--info">
       The plugin is auto-discovered only when AIline is installed in the same Python venv as the
       training script. If the column stays empty, see the
-      <a href="/ailine/docs/troubleshooting">Troubleshooting</a> page.
+      <a href="./troubleshooting.html">Troubleshooting</a> page.
     </p>
     <p>
       Other strategies are available via <code>track.mlflow.link_strategy</code>:
@@ -149,3 +167,4 @@ wandb/
 !dist/keep.txt   # negate a default with `!`</code></pre>
   </section>
 </article>
+</main>

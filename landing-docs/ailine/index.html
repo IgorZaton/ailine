@@ -1,0 +1,130 @@
+<!--
+  AIline Docs landing page
+  User-first docs home with clear entry paths.
+-->
+<link rel="stylesheet" href="./docs.css" />
+
+<nav class="docs-nav" aria-label="AIline documentation">
+  <a class="docs-nav__home" href="./index.html">
+    <img class="docs-nav__logo" src="../../imgs/icon_2.png" alt="AIline logo" />
+    <span>AIline Docs</span>
+  </a>
+  <ul class="docs-nav__list">
+    <li><a href="./quickstart.html">Quickstart</a></li>
+    <li><a href="./concepts.html">Concepts</a></li>
+    <li><a href="./cli-reference.html">CLI reference</a></li>
+    <li><a href="./troubleshooting.html">Troubleshooting</a></li>
+    <li><a href="./internals.html">Internals</a></li>
+  </ul>
+  <a class="docs-nav__back" href="./index.html">&larr; Back to AIline</a>
+</nav>
+
+<main class="docs-layout">
+  <aside class="docs-toc" aria-label="On this page">
+    <h2 class="docs-toc__title">On this page</h2>
+    <ol>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#start-here">Start here</a></li>
+      <li><a href="#docs-map">Docs map</a></li>
+      <li><a href="#first-run">First run in 3 commands</a></li>
+      <li><a href="#project-links">Project links</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ol>
+  </aside>
+
+  <article class="docs-page docs-home" data-page="home">
+    <header class="docs-home__hero">
+      <img class="docs-home__logo" src="../../imgs/icon_2.png" alt="AIline logo" />
+      <p class="docs-page__eyebrow">AIline documentation</p>
+      <h1>Track ML experiments with reproducible lineage</h1>
+      <p class="docs-page__lede">
+        AIline captures the exact code state, command, environment fingerprint, DVC linkage, and
+        MLflow run behind every experiment. Start in two minutes, then dive into concepts, CLI
+        usage, and internals.
+      </p>
+      <div class="docs-home__cta">
+        <a class="docs-btn docs-btn--primary" href="./quickstart.html">Start quickstart</a>
+        <a class="docs-btn" href="./cli-reference.html">Open CLI reference</a>
+      </div>
+    </header>
+
+    <section id="overview" class="docs-section">
+      <h2>Overview</h2>
+      <p>AIline is user-first tracking with zero training-script rewrites.</p>
+      <ul>
+        <li>Wrap your normal command with <code>ailine track -- ...</code>.</li>
+        <li>Get a live lineage row plus MLflow link while the run is still in progress.</li>
+        <li>Capture snapshots automatically when the Git worktree is dirty.</li>
+      </ul>
+    </section>
+
+    <section id="start-here" class="docs-section">
+      <h2>Start here</h2>
+      <p>Pick your path:</p>
+      <ul>
+        <li><a href="./quickstart.html">Quickstart</a> for first-time setup and first tracked run.</li>
+        <li><a href="./concepts.html">Concepts</a> for the mental model (lineage row, snapshot, link strategy).</li>
+        <li><a href="./cli-reference.html">CLI reference</a> for command details and recipes.</li>
+      </ul>
+    </section>
+
+    <section id="docs-map" class="docs-section docs-home__grid" aria-label="Documentation sections">
+      <h2>Docs map</h2>
+      <article class="docs-card">
+        <h3><a href="./quickstart.html">Quickstart</a></h3>
+        <p>Install AIline, initialize the workspace, verify setup, and run your first tracked command.</p>
+        <p class="docs-card__meta">Best for first-time users.</p>
+      </article>
+
+      <article class="docs-card">
+        <h3><a href="./concepts.html">Concepts</a></h3>
+        <p>Understand lineage rows, snapshot behavior, MLflow link strategies, and configuration boundaries.</p>
+        <p class="docs-card__meta">Read this before scaling usage.</p>
+      </article>
+
+      <article class="docs-card">
+        <h3><a href="./cli-reference.html">CLI reference</a></h3>
+        <p>Command-by-command guide with copy-paste examples and common workflows for track and restore.</p>
+        <p class="docs-card__meta">Daily-use reference.</p>
+      </article>
+
+      <article class="docs-card">
+        <h3><a href="./troubleshooting.html">Troubleshooting</a></h3>
+        <p>Fix empty MLflow links, tracking URI mismatches, deleted-experiment errors, and restore blockers.</p>
+        <p class="docs-card__meta">Use when something behaves unexpectedly.</p>
+      </article>
+
+      <article class="docs-card">
+        <h3><a href="./internals.html">Internals</a></h3>
+        <p>Architecture, data model, plugin mechanics, reproducibility scope, and release mechanics for contributors.</p>
+        <p class="docs-card__meta">For developers and maintainers.</p>
+      </article>
+    </section>
+
+    <section id="first-run" class="docs-section docs-home__mini">
+      <h2>First run in 3 commands</h2>
+<pre><code class="language-bash">ailine init-workspace
+ailine doctor
+ailine track -- python train.py --epochs 5</code></pre>
+      <p>
+        Want UI dashboards? Run <code>ailine serve</code> to open AIline on
+        <code>http://127.0.0.1:5000</code> and MLflow on <code>http://127.0.0.1:5001</code>.
+      </p>
+    </section>
+
+    <section id="project-links" class="docs-section">
+      <h2>Project links</h2>
+      <ul>
+        <li><a href="https://github.com/IgorZaton/ailine" target="_blank" rel="noopener noreferrer">AIline GitHub repository</a></li>
+      </ul>
+    </section>
+
+    <section id="contact" class="docs-section">
+      <h2>Contact</h2>
+      <ul>
+        <li><a href="https://igorzaton.com" target="_blank" rel="noopener noreferrer">igorzaton.com</a></li>
+        <li><a href="https://github.com/IgorZaton" target="_blank" rel="noopener noreferrer">github.com/IgorZaton</a></li>
+      </ul>
+    </section>
+  </article>
+</main>

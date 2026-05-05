@@ -3,6 +3,34 @@
   Goal: a working tracked run in under 2 minutes.
   Length target: ~80-120 lines of HTML.
 -->
+<link rel="stylesheet" href="./docs.css" />
+
+<nav class="docs-nav" aria-label="AIline documentation">
+  <a class="docs-nav__home" href="./index.html">
+    <img class="docs-nav__logo" src="../../imgs/icon_2.png" alt="AIline logo" />
+    <span>AIline Docs</span>
+  </a>
+  <ul class="docs-nav__list">
+    <li><a href="./quickstart.html">Quickstart</a></li>
+    <li><a href="./concepts.html">Concepts</a></li>
+    <li><a href="./cli-reference.html">CLI reference</a></li>
+    <li><a href="./troubleshooting.html">Troubleshooting</a></li>
+    <li><a href="./internals.html">Internals</a></li>
+  </ul>
+  <a class="docs-nav__back" href="./index.html">&larr; Back to AIline</a>
+</nav>
+
+<main class="docs-layout">
+  <aside class="docs-toc" aria-label="On this page">
+    <h2 class="docs-toc__title">On this page</h2>
+    <ol>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#three-commands">Three commands</a></li>
+      <li><a href="#what-you-get">What you get</a></li>
+      <li><a href="#next">Next steps</a></li>
+    </ol>
+  </aside>
+
 <article class="docs-page" data-page="quickstart">
   <header class="docs-page__header">
     <p class="docs-page__eyebrow">AIline docs</p>
@@ -13,16 +41,6 @@
       <code>ailine track --</code> and keep your script unchanged.
     </p>
   </header>
-
-  <aside class="docs-toc" aria-label="On this page">
-    <h2 class="docs-toc__title">On this page</h2>
-    <ol>
-      <li><a href="#install">Install</a></li>
-      <li><a href="#three-commands">Three commands</a></li>
-      <li><a href="#what-you-get">What you get</a></li>
-      <li><a href="#next">Next steps</a></li>
-    </ol>
-  </aside>
 
   <section id="install" class="docs-section">
     <h2>Install</h2>
@@ -79,9 +97,10 @@ ailine track: recorded name='witty-otter' snapshot=8f3c... exit=0</code></pre>
   <section id="next" class="docs-section">
     <h2>Next steps</h2>
     <ul>
-      <li><a href="/ailine/docs/concepts">Concepts</a> &mdash; how AIline thinks about runs, snapshots, and MLflow.</li>
-      <li><a href="/ailine/docs/cli-reference">CLI reference</a> &mdash; every command with one example.</li>
-      <li><a href="/ailine/docs/troubleshooting">Troubleshooting</a> &mdash; the questions real users hit first.</li>
+      <li><a href="./concepts.html">Concepts</a> &mdash; how AIline thinks about runs, snapshots, and MLflow.</li>
+      <li><a href="./cli-reference.html">CLI reference</a> &mdash; every command with one example.</li>
+      <li><a href="./troubleshooting.html">Troubleshooting</a> &mdash; the questions real users hit first.</li>
     </ul>
   </section>
 </article>
+</main>
