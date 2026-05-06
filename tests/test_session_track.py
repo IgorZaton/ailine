@@ -131,6 +131,28 @@ class TrackedCommandTests(unittest.TestCase):
                 stored.append(name)
         self.assertGreaterEqual(len(stored), 1)
 
+    def test_snapshot_row_persists_git_url(self):
+        with open(os.path.join(self.repo, "new_file.txt"), "w") as f:
+            f.write("dirty\n")
+
+        result = run_tracked_command(
+            git_root=self.repo,
+            argv=[sys.executable, "-c", "print('hi')"],
+            storage=self.storage,
+            config=self.config,
+            git_url_hint="https://github.com/octo/repo.git",
+        )
+        self.assertEqual(result.commit_type, "snapshot")
+
+        conn = sqlite3.connect(constants.DB_PATH)
+        try:
+            row = conn.execute(
+                "SELECT git_url FROM tree WHERE id = ?", (result.commit_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row[0], "https://github.com/octo/repo.git")
+
     def test_dirty_tree_dedups_objects_across_runs(self):
         with open(os.path.join(self.repo, "shared.txt"), "w") as f:
             f.write("shared content\n")

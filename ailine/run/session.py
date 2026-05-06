@@ -565,7 +565,7 @@ def run_tracked_command(
                 dvc_version=None,
                 snapshot_path=snap.get("snapshot_path") if snap else None,
                 timestamp=started_at,
-                git_url=git_url if commit_type == CommitType.GIT else None,
+                git_url=git_url,
                 manifest_path=snap.get("manifest_path") if snap else None,
                 metadata_path=snap.get("metadata_path") if snap else None,
                 archive_bytes=snap.get("archive_bytes") if snap else None,

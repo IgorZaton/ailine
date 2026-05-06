@@ -11,6 +11,7 @@ from unittest.mock import patch
 import ailine
 from ailine.config import constants
 from ailine.snapshot import object_store
+from ailine.web import state as web_state
 
 
 def _write_object(storage: str, content: bytes) -> str:
@@ -101,6 +102,47 @@ class ObjectsV1ViewTests(unittest.TestCase):
 
     def tearDown(self):
         constants.DB_PATH = self.old_db_path
+        web_state.set_repo_url(None)
+
+    def _insert_snapshot_row(
+        self,
+        snap_id: str,
+        parent: str,
+        git_url: str | None,
+    ) -> None:
+        manifest_path = os.path.join(self.storage, f"{snap_id}.manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        meta_path = os.path.join(self.storage, f"{snap_id}.metadata.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "format": "objects-v1",
+                    "objects_dir": os.path.join(self.storage, "objects"),
+                },
+                f,
+            )
+        diff_path = os.path.join(self.storage, f"{snap_id}.diff.patch")
+        with open(diff_path, "w", encoding="utf-8") as f:
+            f.write("")
+        conn = sqlite3.connect(constants.DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO tree (id, type, parent, snapshot_path, manifest_path, "
+            "diff_path, timestamp, git_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                snap_id,
+                "snapshot",
+                parent,
+                None,
+                manifest_path,
+                diff_path,
+                "2026-05-04T07:00:00",
+                git_url,
+            ),
+        )
+        conn.commit()
+        conn.close()
 
     @patch("ailine.web.routes.snapshot_view.render_template")
     def test_index_builds_tree(self, mock_render):
@@ -139,6 +181,46 @@ class ObjectsV1ViewTests(unittest.TestCase):
         mock_render.return_value = "ok"
         response = self.client.get(f"/snapshot/{self.snap_id}?path=../etc/passwd")
         self.assertEqual(response.status_code, 404)
+
+    @patch("ailine.web.routes.snapshot_view.render_template")
+    def test_parent_url_uses_persisted_git_url(self, mock_render):
+        mock_render.return_value = "ok"
+        web_state.set_repo_url(None)
+        self._insert_snapshot_row(
+            "snapwithurl",
+            "deadbeef",
+            "https://github.com/octo/repo.git",
+        )
+        response = self.client.get("/snapshot/snapwithurl")
+        self.assertEqual(response.status_code, 200)
+        _, kwargs = mock_render.call_args
+        self.assertEqual(
+            kwargs["parent_url"],
+            "https://github.com/octo/repo/commit/deadbeef",
+        )
+
+    @patch("ailine.web.routes.snapshot_view.render_template")
+    def test_parent_url_falls_back_to_demo_state(self, mock_render):
+        mock_render.return_value = "ok"
+        web_state.set_repo_url("https://github.com/octo/legacy.git")
+        self._insert_snapshot_row("snaplegacy", "cafebabe", None)
+        response = self.client.get("/snapshot/snaplegacy")
+        self.assertEqual(response.status_code, 200)
+        _, kwargs = mock_render.call_args
+        self.assertEqual(
+            kwargs["parent_url"],
+            "https://github.com/octo/legacy/commit/cafebabe",
+        )
+
+    @patch("ailine.web.routes.snapshot_view.render_template")
+    def test_parent_url_none_when_both_sources_empty(self, mock_render):
+        mock_render.return_value = "ok"
+        web_state.set_repo_url(None)
+        self._insert_snapshot_row("snapnourl", "f00dface", None)
+        response = self.client.get("/snapshot/snapnourl")
+        self.assertEqual(response.status_code, 200)
+        _, kwargs = mock_render.call_args
+        self.assertIsNone(kwargs["parent_url"])
 
     def test_legacy_row_returns_410_with_prune_hint(self):
         # Insert a row whose metadata sibling has no ``format`` field.

@@ -205,7 +205,7 @@ def view(snapshot_id: str):
                 "language": detect_language(selected),
             }
 
-    repo_url = get_repo_url()
+    repo_url = row.get("git_url") or get_repo_url()
     parent_url = normalize_git_url(repo_url, parent) if parent and repo_url else None
     logging.info(f"Viewed snapshot {snapshot_id} (view={view_mode}, path={selected})")
     return render_template(

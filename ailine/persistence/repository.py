@@ -335,7 +335,7 @@ def fetch_snapshot_browser_row(
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT snapshot_path, parent, manifest_path, diff_path "
+            "SELECT snapshot_path, parent, manifest_path, diff_path, git_url "
             "FROM tree WHERE id = ?",
             (snapshot_id,),
         )
@@ -349,6 +349,7 @@ def fetch_snapshot_browser_row(
         "parent": row[1],
         "manifest_path": row[2],
         "diff_path": row[3],
+        "git_url": row[4],
     }
 
 
