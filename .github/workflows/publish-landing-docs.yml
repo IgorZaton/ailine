@@ -1,0 +1,55 @@
+name: Publish Landing Docs
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-docs-to-landing-page:
+    name: Sync docs to IgorZaton/landing-page
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout AIline repository
+        uses: actions/checkout@v4
+
+      - name: Verify docs source exists
+        run: |
+          set -euo pipefail
+          test -f landing-docs/ailine/index.html
+          test -d landing-docs/ailine
+
+      - name: Checkout landing-page repository
+        uses: actions/checkout@v4
+        with:
+          repository: IgorZaton/landing-page
+          token: ${{ secrets.LANDING_PAGE_PUSH_TOKEN }}
+          path: landing-page
+
+      - name: Sync docs into landing-page public/ailine
+        run: |
+          set -euo pipefail
+          mkdir -p landing-page/public/ailine
+          rsync -av --delete \
+            --exclude ".DS_Store" \
+            landing-docs/ailine/ \
+            landing-page/public/ailine/
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+          cd landing-page
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No docs changes to publish."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/ailine
+          git commit -m "docs(ailine): sync landing docs from ${GITHUB_REPOSITORY}@${GITHUB_REF_NAME}"
+          git push origin HEAD

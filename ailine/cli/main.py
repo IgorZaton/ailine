@@ -30,7 +30,13 @@ from ailine.snapshot.storage import resolve_storage_dir
 from ailine.web.state import get_repo_url, load_repo_url
 
 
-@click.group()
+@click.group(
+    help=(
+        "AIline CLI for experiment lineage tracking.\n\n"
+        "Docs: landing-docs/ailine/index.html\n"
+        "Online: https://github.com/IgorZaton/ailine"
+    )
+)
 def cli():
     # Relocate any pre-``.ailine/`` artifacts BEFORE opening DB/log so the new
     # paths are used from this invocation onwards. Best-effort: failures fall

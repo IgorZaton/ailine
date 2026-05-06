@@ -4,6 +4,13 @@
 
 ML experiment lineage tracker with snapshot-based reproducibility.
 
+## Documentation
+
+- Landing docs (this repo): [`landing-docs/ailine/index.html`](landing-docs/ailine/index.html)
+- Web docs source pages: [`landing-docs/ailine/`](landing-docs/ailine/)
+- Core tracking contract: [docs/track-contract.md](docs/track-contract.md)
+- Reproducibility contract: [docs/repro-contract.md](docs/repro-contract.md)
+
 AIline captures the **exact** code that produced an experiment — including
 uncommitted changes — alongside DVC-managed data and MLflow run metadata, so
 past experiments can be inspected and (eventually) re-run with confidence.
