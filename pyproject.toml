@@ -9,7 +9,7 @@ license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/IgorZaton/ailine"
 repository = "https://github.com/IgorZaton/ailine"
-documentation = "https://github.com/IgorZaton/ailine"
+documentation = "https://www.igorzaton.com/ailine/index.html"
 keywords = ["mlops", "experiment-tracking", "lineage", "mlflow", "dvc", "reproducibility"]
 classifiers = [
     "Development Status :: 3 - Alpha",
