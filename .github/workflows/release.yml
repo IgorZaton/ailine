@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Build, publish to TestPyPI, attach to GitHub Release
+    name: Build, publish to PyPI, attach to GitHub Release
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
@@ -52,22 +52,19 @@ jobs:
           echo "value=${version}" >> "$GITHUB_OUTPUT"
           echo "Resolved version: ${version}"
 
-      - name: Fail fast if TestPyPI token is missing
+      - name: Fail fast if PyPI token is missing
         env:
-          TEST_PYPI_API_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          if [ -z "${TEST_PYPI_API_TOKEN}" ]; then
-            echo "::error::Repository secret TEST_PYPI_API_TOKEN is not set; cannot publish to TestPyPI."
+          if [ -z "${PYPI_API_TOKEN}" ]; then
+            echo "::error::Repository secret PYPI_API_TOKEN is not set; cannot publish to PyPI."
             exit 1
           fi
 
-      - name: Configure Poetry for TestPyPI
-        run: poetry config repositories.testpypi https://test.pypi.org/legacy/
-
-      - name: Publish to TestPyPI
+      - name: Publish to PyPI
         env:
-          TEST_PYPI_API_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
-        run: poetry publish -r testpypi -u __token__ -p "${TEST_PYPI_API_TOKEN}" --no-interaction
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: poetry publish -u __token__ -p "${PYPI_API_TOKEN}" --no-interaction
 
       - name: Publish GitHub Release with artifacts
         uses: softprops/action-gh-release@v2
@@ -77,8 +74,8 @@ jobs:
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
 
-  smoke-install-from-testpypi:
-    name: Smoke install from TestPyPI
+  smoke-install-from-pypi:
+    name: Smoke install from PyPI
     needs: build-and-release
     runs-on: ubuntu-latest
 
@@ -88,10 +85,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Wait for TestPyPI propagation
+      - name: Wait for PyPI propagation
         run: sleep 30
 
-      - name: Install ailine-lineage from TestPyPI in a fresh venv
+      - name: Install ailine-core from PyPI in a fresh venv
         env:
           AILINE_VERSION: ${{ needs.build-and-release.outputs.version }}
         run: |
@@ -101,17 +98,14 @@ jobs:
           source /tmp/ailine-smoke/bin/activate
           python -m pip install -U pip
           for attempt in 1 2 3 4 5; do
-            if pip install \
-                --index-url https://test.pypi.org/simple/ \
-                --extra-index-url https://pypi.org/simple \
-                "ailine-lineage==${AILINE_VERSION}"; then
+            if pip install "ailine-core==${AILINE_VERSION}"; then
               echo "Install succeeded on attempt ${attempt}"
               break
             fi
             echo "Install attempt ${attempt} failed; sleeping before retry"
             sleep 30
           done
-          pip show ailine-lineage
+          pip show ailine-core
 
       - name: Verify CLI entrypoints
         run: |

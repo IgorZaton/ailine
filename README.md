@@ -26,7 +26,7 @@ pip install -e .
 ## Quick start (your own project)
 
 ```bash
-pip install ailine-lineage                          # or: poetry add --group dev ailine-lineage
+pip install ailine-core                             # or: poetry add --group dev ailine-core
 cd /path/to/your/repo
 ailine init-workspace                               # writes default .ailine.yml + .ailineignore
 ailine doctor                                       # green-light all checks
@@ -34,17 +34,8 @@ ailine track -- python train.py --epochs 5          # run + record
 ailine status --verbose                             # see what was captured
 ```
 
-### Try a pre-release from TestPyPI
-
-```bash
-pip install \
-  --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple \
-  ailine-lineage
-```
-
-The `--extra-index-url` keeps regular dependencies (mlflow, dvc, ...) flowing
-from real PyPI; only `ailine-lineage` itself is fetched from TestPyPI.
+Releases are published to [PyPI](https://pypi.org/project/ailine-core/) when a
+`v*.*.*` tag is pushed (see `.github/workflows/release.yml`).
 
 `ailine track --` is the primary, no-magic interface. It snapshots dirty
 state, records DVC linkage + environment fingerprint + the exact argv, runs

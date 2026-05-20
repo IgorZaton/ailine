@@ -56,7 +56,7 @@
 <pre><code class="language-bash">python -c "import ailine.integrations.mlflow_plugin; print('ok')"</code></pre>
     <p>If this fails, AIline is not installed in that venv. Install into the same env you run
       training from:</p>
-<pre><code class="language-bash">pip install ailine-lineage</code></pre>
+<pre><code class="language-bash">pip install ailine-core</code></pre>
     <p class="docs-callout">
       The plugin is registered as an <code>mlflow.run_context_provider</code> entry point, so
       reinstalling AIline (or upgrading) is what makes MLflow pick it up. See
